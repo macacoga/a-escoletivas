@@ -14,6 +14,17 @@ sumy==0.11.0
 nltk==3.8.1
 transformers==4.36.0
 torch==2.1.0
+spacy==3.7.2
+spacy-lookups-data==1.0.5
+unidecode==1.3.7
+
+# HTML processing
+bleach==6.1.0
+html2text==2020.1.16
+
+# Text analysis
+textstat==0.7.3
+wordcloud==1.9.2
 
 # Web framework (for future API/Dashboard)
 flask==2.3.3

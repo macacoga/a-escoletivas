@@ -9,7 +9,7 @@ from contextlib import contextmanager
 import json
 from datetime import datetime
 
-from .models import ProcessoJudicial, ResultadoNLP, LogExecucao
+from .models import ProcessoJudicial, ResultadoNLP, LogExecucao, EstatisticasNLP
 from ..utils.logging import LoggerMixin
 
 
@@ -67,14 +67,41 @@ class DatabaseManager(LoggerMixin):
                 CREATE TABLE IF NOT EXISTS resultados_nlp (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     processo_id INTEGER NOT NULL,
+                    texto_processado TEXT,
                     resumo_extrativo TEXT,
+                    resumo_estruturado TEXT,
                     palavras_chave TEXT,
                     tema_principal TEXT,
-                    sentimento TEXT,
                     entidades_nomeadas TEXT,
+                    direitos_trabalhistas TEXT,
+                    valores_monetarios TEXT,
+                    base_legal TEXT,
+                    qualidade_texto REAL DEFAULT 0.0,
+                    confianca_global REAL DEFAULT 0.0,
+                    tempo_processamento REAL DEFAULT 0.0,
+                    metodo_sumarizacao TEXT,
+                    versao_pipeline TEXT DEFAULT '1.0.0',
                     metadados_nlp TEXT,
                     data_processamento TEXT NOT NULL,
                     FOREIGN KEY (processo_id) REFERENCES processos_judiciais (id)
+                )
+            ''')
+            
+            # Tabela de estatísticas NLP
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS estatisticas_nlp (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    data_analise TEXT NOT NULL,
+                    total_processos INTEGER DEFAULT 0,
+                    processos_com_nlp INTEGER DEFAULT 0,
+                    tempo_processamento_medio REAL DEFAULT 0.0,
+                    qualidade_media REAL DEFAULT 0.0,
+                    confianca_media REAL DEFAULT 0.0,
+                    entidades_mais_comuns TEXT,
+                    direitos_mais_comuns TEXT,
+                    tribunais_distribuicao TEXT,
+                    valores_estatisticas TEXT,
+                    metadados_estatisticas TEXT
                 )
             ''')
             
@@ -209,15 +236,22 @@ class DatabaseManager(LoggerMixin):
         with self.get_connection() as conn:
             cursor = conn.execute('''
                 INSERT INTO resultados_nlp (
-                    processo_id, resumo_extrativo, palavras_chave,
-                    tema_principal, sentimento, entidades_nomeadas,
-                    metadados_nlp, data_processamento
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    processo_id, texto_processado, resumo_extrativo, resumo_estruturado,
+                    palavras_chave, tema_principal, entidades_nomeadas,
+                    direitos_trabalhistas, valores_monetarios, base_legal,
+                    qualidade_texto, confianca_global, tempo_processamento,
+                    metodo_sumarizacao, versao_pipeline, metadados_nlp, data_processamento
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
-                resultado.processo_id, resultado.resumo_extrativo,
+                resultado.processo_id, resultado.texto_processado,
+                resultado.resumo_extrativo, resultado.resumo_estruturado,
                 resultado.palavras_chave, resultado.tema_principal,
-                resultado.sentimento, resultado.entidades_nomeadas,
-                resultado.metadados_nlp, resultado.data_processamento.isoformat()
+                resultado.entidades_nomeadas, resultado.direitos_trabalhistas,
+                resultado.valores_monetarios, resultado.base_legal,
+                resultado.qualidade_texto, resultado.confianca_global,
+                resultado.tempo_processamento, resultado.metodo_sumarizacao,
+                resultado.versao_pipeline, resultado.metadados_nlp,
+                resultado.data_processamento.isoformat()
             ))
             
             conn.commit()
@@ -305,3 +339,296 @@ class DatabaseManager(LoggerMixin):
             stats['ultima_coleta'] = ultima_coleta
             
             return stats 
+    
+    # Métodos para EstatisticasNLP
+    def insert_estatisticas_nlp(self, estatisticas: EstatisticasNLP) -> int:
+        """Insere estatísticas de processamento NLP"""
+        with self.get_connection() as conn:
+            cursor = conn.execute('''
+                INSERT INTO estatisticas_nlp (
+                    data_analise, total_processos, processos_com_nlp,
+                    tempo_processamento_medio, qualidade_media, confianca_media,
+                    entidades_mais_comuns, direitos_mais_comuns, tribunais_distribuicao,
+                    valores_estatisticas, metadados_estatisticas
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                estatisticas.data_analise.isoformat(),
+                estatisticas.total_processos, estatisticas.processos_com_nlp,
+                estatisticas.tempo_processamento_medio, estatisticas.qualidade_media,
+                estatisticas.confianca_media, estatisticas.entidades_mais_comuns,
+                estatisticas.direitos_mais_comuns, estatisticas.tribunais_distribuicao,
+                estatisticas.valores_estatisticas, estatisticas.metadados_estatisticas
+            ))
+            
+            conn.commit()
+            return cursor.lastrowid
+    
+    def get_latest_estatisticas_nlp(self) -> Optional[EstatisticasNLP]:
+        """Busca as estatísticas NLP mais recentes"""
+        with self.get_connection() as conn:
+            cursor = conn.execute('''
+                SELECT * FROM estatisticas_nlp 
+                ORDER BY data_analise DESC 
+                LIMIT 1
+            ''')
+            
+            row = cursor.fetchone()
+            if row:
+                return EstatisticasNLP.from_dict(dict(row))
+            return None
+    
+    # Métodos integrados com pipeline NLP
+    def processar_texto_nlp(self, processo_id: int, pipeline) -> bool:
+        """
+        Processa um texto específico através do pipeline NLP
+        
+        Args:
+            processo_id: ID do processo
+            pipeline: Instância do pipeline NLP
+            
+        Returns:
+            True se processado com sucesso, False caso contrário
+        """
+        try:
+            # Buscar processo
+            processo = self.get_processo_by_id(processo_id)
+            if not processo:
+                return False
+            
+            # Verificar se já foi processado
+            if processo.processado_nlp:
+                return True
+            
+            # Processar com pipeline
+            resultado_nlp = pipeline.process_text(
+                processo.conteudo_bruto_decisao,
+                str(processo_id)
+            )
+            
+            # Criar objeto ResultadoNLP
+            resultado_db = ResultadoNLP(
+                processo_id=processo_id,
+                texto_processado=resultado_nlp.processed_text,
+                resumo_extrativo=resultado_nlp.summary.get('summary', ''),
+                resumo_estruturado=json.dumps(resultado_nlp.summary.get('context', {}), ensure_ascii=False),
+                palavras_chave=json.dumps([e.text for e in resultado_nlp.entities], ensure_ascii=False),
+                tema_principal=self._extract_main_theme(resultado_nlp.worker_rights),
+                entidades_nomeadas=json.dumps([e.to_dict() for e in resultado_nlp.entities], ensure_ascii=False),
+                direitos_trabalhistas=json.dumps([r.to_dict() for r in resultado_nlp.worker_rights], ensure_ascii=False),
+                valores_monetarios=json.dumps(self._extract_monetary_values(resultado_nlp.entities), ensure_ascii=False),
+                base_legal=json.dumps(self._extract_legal_basis(resultado_nlp.entities), ensure_ascii=False),
+                qualidade_texto=resultado_nlp.text_quality.get('quality_score', 0.0),
+                confianca_global=resultado_nlp.confidence_score,
+                tempo_processamento=resultado_nlp.processing_time,
+                metodo_sumarizacao=resultado_nlp.summary.get('method', 'unknown'),
+                versao_pipeline='1.0.0',
+                metadados_nlp=json.dumps(resultado_nlp.to_dict(), ensure_ascii=False)
+            )
+            
+            # Salvar resultado
+            self.insert_resultado_nlp(resultado_db)
+            
+            # Marcar processo como processado
+            self.update_processo_processado(processo_id)
+            
+            return True
+            
+        except Exception as e:
+            self.log_error(e, "processar_texto_nlp", processo_id=processo_id)
+            return False
+    
+    def _extract_main_theme(self, worker_rights: List) -> str:
+        """Extrai tema principal baseado nos direitos identificados"""
+        if not worker_rights:
+            return "Não identificado"
+        
+        # Pegar o direito com maior confiança
+        main_right = max(worker_rights, key=lambda r: r.confidence)
+        return main_right.description
+    
+    def _extract_monetary_values(self, entities: List) -> List[Dict]:
+        """Extrai valores monetários das entidades"""
+        monetary_values = []
+        for entity in entities:
+            if entity.label == 'MONEY':
+                monetary_values.append({
+                    'text': entity.text,
+                    'confidence': entity.confidence
+                })
+        return monetary_values
+    
+    def _extract_legal_basis(self, entities: List) -> List[Dict]:
+        """Extrai base legal das entidades"""
+        legal_basis = []
+        for entity in entities:
+            if entity.label == 'LAW':
+                legal_basis.append({
+                    'text': entity.text,
+                    'confidence': entity.confidence
+                })
+        return legal_basis
+    
+    def processar_lote_nlp(self, pipeline, limit: int = 50) -> Dict[str, Any]:
+        """
+        Processa um lote de textos através do pipeline NLP
+        
+        Args:
+            pipeline: Instância do pipeline NLP
+            limit: Número máximo de processos para processar
+            
+        Returns:
+            Estatísticas do processamento
+        """
+        try:
+            # Buscar processos não processados
+            processos = self.get_processos_nao_processados(limit)
+            
+            if not processos:
+                return {'message': 'Nenhum processo para processar'}
+            
+            sucessos = 0
+            erros = 0
+            
+            for processo in processos:
+                if self.processar_texto_nlp(processo.id, pipeline):
+                    sucessos += 1
+                else:
+                    erros += 1
+            
+            # Calcular estatísticas
+            estatisticas = {
+                'total_processos': len(processos),
+                'sucessos': sucessos,
+                'erros': erros,
+                'taxa_sucesso': sucessos / len(processos) if processos else 0
+            }
+            
+            self.log_operation(
+                "lote_nlp_processado",
+                **estatisticas
+            )
+            
+            return estatisticas
+            
+        except Exception as e:
+            self.log_error(e, "processar_lote_nlp")
+            return {'error': str(e)}
+    
+    def get_nlp_stats(self) -> Dict[str, Any]:
+        """Retorna estatísticas avançadas de NLP"""
+        with self.get_connection() as conn:
+            stats = {}
+            
+            # Estatísticas básicas
+            cursor = conn.execute('''
+                SELECT 
+                    COUNT(*) as total_resultados,
+                    AVG(qualidade_texto) as qualidade_media,
+                    AVG(confianca_global) as confianca_media,
+                    AVG(tempo_processamento) as tempo_medio,
+                    MIN(data_processamento) as primeiro_processamento,
+                    MAX(data_processamento) as ultimo_processamento
+                FROM resultados_nlp
+            ''')
+            
+            row = cursor.fetchone()
+            if row:
+                stats.update(dict(row))
+            
+            # Distribuição de métodos de sumarização
+            cursor = conn.execute('''
+                SELECT metodo_sumarizacao, COUNT(*) as count
+                FROM resultados_nlp
+                GROUP BY metodo_sumarizacao
+            ''')
+            
+            stats['metodos_sumarizacao'] = {row['metodo_sumarizacao']: row['count'] for row in cursor.fetchall()}
+            
+            # Distribuição de qualidade
+            cursor = conn.execute('''
+                SELECT 
+                    SUM(CASE WHEN qualidade_texto >= 0.8 THEN 1 ELSE 0 END) as alta_qualidade,
+                    SUM(CASE WHEN qualidade_texto >= 0.5 AND qualidade_texto < 0.8 THEN 1 ELSE 0 END) as media_qualidade,
+                    SUM(CASE WHEN qualidade_texto < 0.5 THEN 1 ELSE 0 END) as baixa_qualidade
+                FROM resultados_nlp
+            ''')
+            
+            row = cursor.fetchone()
+            if row:
+                stats['distribuicao_qualidade'] = dict(row)
+            
+            return stats
+    
+    def export_nlp_results(self, output_path: str = None) -> str:
+        """
+        Exporta resultados NLP para arquivo JSON
+        
+        Args:
+            output_path: Caminho do arquivo de saída
+            
+        Returns:
+            Caminho do arquivo criado ou JSON string
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute('''
+                    SELECT 
+                        p.numero_processo,
+                        p.tribunal,
+                        p.data_publicacao,
+                        r.resumo_extrativo,
+                        r.palavras_chave,
+                        r.tema_principal,
+                        r.entidades_nomeadas,
+                        r.direitos_trabalhistas,
+                        r.valores_monetarios,
+                        r.qualidade_texto,
+                        r.confianca_global,
+                        r.data_processamento
+                    FROM resultados_nlp r
+                    JOIN processos_judiciais p ON r.processo_id = p.id
+                    ORDER BY r.data_processamento DESC
+                ''')
+                
+                results = []
+                for row in cursor.fetchall():
+                    result = dict(row)
+                    
+                    # Converter campos JSON
+                    for field in ['palavras_chave', 'entidades_nomeadas', 'direitos_trabalhistas', 'valores_monetarios']:
+                        if result[field]:
+                            try:
+                                result[field] = json.loads(result[field])
+                            except json.JSONDecodeError:
+                                result[field] = []
+                    
+                    results.append(result)
+                
+                export_data = {
+                    'metadata': {
+                        'export_date': datetime.now().isoformat(),
+                        'total_records': len(results),
+                        'version': '1.0.0'
+                    },
+                    'results': results
+                }
+                
+                json_string = json.dumps(export_data, ensure_ascii=False, indent=2)
+                
+                if output_path:
+                    with open(output_path, 'w', encoding='utf-8') as f:
+                        f.write(json_string)
+                    
+                    self.log_operation(
+                        "nlp_results_exported",
+                        output_path=output_path,
+                        total_records=len(results)
+                    )
+                    
+                    return output_path
+                
+                return json_string
+                
+        except Exception as e:
+            self.log_error(e, "export_nlp_results")
+            raise

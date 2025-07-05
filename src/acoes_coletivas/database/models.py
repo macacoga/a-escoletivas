@@ -78,11 +78,20 @@ class ResultadoNLP:
     """
     id: Optional[int] = None
     processo_id: int = 0
+    texto_processado: str = ""
     resumo_extrativo: str = ""
+    resumo_estruturado: str = ""  # JSON string com resumo por seções
     palavras_chave: str = ""  # JSON string com lista de palavras-chave
     tema_principal: str = ""
-    sentimento: str = ""
     entidades_nomeadas: str = ""  # JSON string com entidades identificadas
+    direitos_trabalhistas: str = ""  # JSON string com direitos identificados
+    valores_monetarios: str = ""  # JSON string com valores extraídos
+    base_legal: str = ""  # JSON string com base legal identificada
+    qualidade_texto: float = 0.0
+    confianca_global: float = 0.0
+    tempo_processamento: float = 0.0
+    metodo_sumarizacao: str = ""
+    versao_pipeline: str = "1.0.0"
     metadados_nlp: str = ""  # JSON string com metadados do processamento
     data_processamento: datetime = field(default_factory=datetime.now)
     
@@ -91,11 +100,20 @@ class ResultadoNLP:
         return {
             'id': self.id,
             'processo_id': self.processo_id,
+            'texto_processado': self.texto_processado,
             'resumo_extrativo': self.resumo_extrativo,
+            'resumo_estruturado': self.resumo_estruturado,
             'palavras_chave': self.palavras_chave,
             'tema_principal': self.tema_principal,
-            'sentimento': self.sentimento,
             'entidades_nomeadas': self.entidades_nomeadas,
+            'direitos_trabalhistas': self.direitos_trabalhistas,
+            'valores_monetarios': self.valores_monetarios,
+            'base_legal': self.base_legal,
+            'qualidade_texto': self.qualidade_texto,
+            'confianca_global': self.confianca_global,
+            'tempo_processamento': self.tempo_processamento,
+            'metodo_sumarizacao': self.metodo_sumarizacao,
+            'versao_pipeline': self.versao_pipeline,
             'metadados_nlp': self.metadados_nlp,
             'data_processamento': self.data_processamento.isoformat() if self.data_processamento else None
         }
@@ -105,6 +123,50 @@ class ResultadoNLP:
         """Cria objeto a partir de dicionário"""
         if data.get('data_processamento') and isinstance(data['data_processamento'], str):
             data['data_processamento'] = datetime.fromisoformat(data['data_processamento'])
+        
+        return cls(**data)
+
+
+@dataclass
+class EstatisticasNLP:
+    """
+    Modelo para armazenar estatísticas de processamento NLP
+    """
+    id: Optional[int] = None
+    data_analise: datetime = field(default_factory=datetime.now)
+    total_processos: int = 0
+    processos_com_nlp: int = 0
+    tempo_processamento_medio: float = 0.0
+    qualidade_media: float = 0.0
+    confianca_media: float = 0.0
+    entidades_mais_comuns: str = ""  # JSON string
+    direitos_mais_comuns: str = ""  # JSON string
+    tribunais_distribuicao: str = ""  # JSON string
+    valores_estatisticas: str = ""  # JSON string com estatísticas de valores
+    metadados_estatisticas: str = ""  # JSON string com metadados adicionais
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Converte o objeto para dicionário"""
+        return {
+            'id': self.id,
+            'data_analise': self.data_analise.isoformat() if self.data_analise else None,
+            'total_processos': self.total_processos,
+            'processos_com_nlp': self.processos_com_nlp,
+            'tempo_processamento_medio': self.tempo_processamento_medio,
+            'qualidade_media': self.qualidade_media,
+            'confianca_media': self.confianca_media,
+            'entidades_mais_comuns': self.entidades_mais_comuns,
+            'direitos_mais_comuns': self.direitos_mais_comuns,
+            'tribunais_distribuicao': self.tribunais_distribuicao,
+            'valores_estatisticas': self.valores_estatisticas,
+            'metadados_estatisticas': self.metadados_estatisticas
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'EstatisticasNLP':
+        """Cria objeto a partir de dicionário"""
+        if data.get('data_analise') and isinstance(data['data_analise'], str):
+            data['data_analise'] = datetime.fromisoformat(data['data_analise'])
         
         return cls(**data)
 
