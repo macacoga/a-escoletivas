@@ -101,7 +101,7 @@ class LoggerMixin:
             **kwargs
         )
     
-    def log_error(self, error: Exception, operation: str = None, **kwargs: Any) -> None:
+    def log_error(self, error: Exception, operation: str = "", **kwargs: Any) -> None:
         """
         Registra um erro com contexto
         
@@ -118,7 +118,7 @@ class LoggerMixin:
             **kwargs
         )
     
-    def log_metrics(self, metrics: Dict[str, Any], operation: str = None) -> None:
+    def log_metrics(self, metrics: Dict[str, Any], operation: str = "") -> None:
         """
         Registra métricas de uma operação
         

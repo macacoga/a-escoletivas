@@ -98,7 +98,8 @@ def export_data(db: DatabaseManager, output_file: str):
             """)
             
             import pandas as pd
-            df = pd.DataFrame(cursor.fetchall(), columns=[desc[0] for desc in cursor.description])
+            columns = pd.Index([str(desc[0]) for desc in cursor.description])
+            df = pd.DataFrame(cursor.fetchall(), columns=columns)
             
             df.to_excel(output_file, index=False, engine='openpyxl')
             logger.info(f"Dados exportados para {output_file}")

@@ -139,7 +139,7 @@ class ProcessoJudicialDetalhadoSchema(Schema):
     data_processamento = fields.DateTime(allow_none=True, format='iso')
     
     # Conteúdo da decisão (opcional para economizar bandwidth)
-    conteudo_bruto_decisao = fields.String(allow_none=True, missing=None)
+    conteudo_bruto_decisao = fields.String(allow_none=True, load_default=None)
     
     # Resultados de NLP
     resultado_nlp = fields.Nested(ResultadoNLPSchema, allow_none=True)
@@ -156,8 +156,8 @@ class ProcessosListagemSchema(Schema):
 class SearchFiltersSchema(Schema):
     """Schema para filtros de busca"""
     # Parâmetros de paginação
-    page = fields.Integer(missing=1, validate=validate.Range(min=1))
-    per_page = fields.Integer(missing=20, validate=validate.Range(min=1, max=100))
+    page = fields.Integer(load_default=1, validate=validate.Range(min=1))
+    per_page = fields.Integer(load_default=20, validate=validate.Range(min=1, max=100))
     
     # Filtros de busca
     numero_processo = fields.String(allow_none=True)
@@ -186,10 +186,10 @@ class SearchFiltersSchema(Schema):
         'data_publicacao', 'data_julgamento', 'data_coleta', 
         'numero_processo', 'qualidade_texto', 'confianca_global'
     ]))
-    sort_order = fields.String(missing='desc', validate=validate.OneOf(['asc', 'desc']))
+    sort_order = fields.String(load_default='desc', validate=validate.OneOf(['asc', 'desc']))
     
     # Incluir conteúdo completo?
-    include_content = fields.Boolean(missing=False)
+    include_content = fields.Boolean(load_default=False)
 
 
 class TopicoSchema(Schema):

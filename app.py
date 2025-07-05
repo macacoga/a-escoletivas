@@ -17,7 +17,7 @@ from src.acoes_coletivas.utils.logging import setup_logging, get_logger
 # Configurar logging
 setup_logging(
     level="INFO",
-    log_file=None,  # Console apenas
+    log_file="logs/acoes_coletivas.log",  # Console apenas
     json_format=True
 )
 
