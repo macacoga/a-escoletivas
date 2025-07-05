@@ -1,70 +1,68 @@
 # Core dependencies
-requests==2.31.0
-beautifulsoup4==4.12.2
-selenium==4.15.2
-lxml==4.9.3
-pandas==2.1.2
-openpyxl==3.1.2
+requests>=2.31.0
+beautifulsoup4>=4.12.2
+selenium>=4.15.2
+lxml>=4.9.3
+pandas>=2.0.0
+numpy>=1.24.0
+openpyxl>=3.1.0
 
 # Database
-sqlite3
+sqlalchemy>=2.0.0
+alembic>=1.12.0
 
-# Text processing and NLP
-sumy==0.11.0
-nltk==3.8.1
-transformers==4.36.0
-torch==2.1.0
-spacy==3.7.2
-spacy-lookups-data==1.0.5
-unidecode==1.3.7
+# NLP dependencies
+spacy>=3.7.0
+nltk>=3.8.0
+sumy>=0.11.0
+transformers>=4.30.0
+scikit-learn>=1.3.0
+textstat>=0.7.0
 
-# HTML processing
-bleach==6.1.0
-html2text==2020.1.16
+# Text processing
+bleach>=6.1.0
+html2text>=2020.1.16
+wordcloud>=1.9.2
 
-# Text analysis
-textstat==0.7.3
-wordcloud==1.9.2
+# API dependencies
+flask>=2.3.0
+flask-restx>=1.1.0
+flask-cors>=4.0.0
+marshmallow>=3.20.0
+waitress>=2.1.0
+gunicorn>=21.2.0
 
-# Web framework e API
-flask==2.3.3
-flask-cors==4.0.0
-flask-restx==1.3.0
-marshmallow==3.20.1
-marshmallow-sqlalchemy==0.29.0
-gunicorn==21.2.0
-waitress==2.1.2
+# Validation and serialization
+jsonschema>=4.20.0
+pydantic>=2.4.0
+pydantic-settings>=2.0.0
 
-# Validação e serialização adicional
-jsonschema==4.20.0
+# Configuration and environment
+python-dotenv>=1.0.0
+click>=8.1.0
 
-# Development and testing
-pytest==7.4.3
-pytest-cov==4.1.0
-black==23.9.1
-flake8==6.1.0
-
-# Database migration (future PostgreSQL support)
-psycopg2-binary==2.9.7
-alembic==1.12.1
+# Progress bars and UI
+tqdm>=4.66.0
+colorama>=0.4.6
 
 # Logging and monitoring
-structlog==23.1.0
-
-# Configuration
-python-dotenv==1.0.0
-pydantic==2.4.2
-pydantic-settings==2.0.3
+structlog>=23.1.0
 
 # Date/time handling
-python-dateutil==2.8.2
+python-dateutil>=2.8.2
 
-# Progress bars
-tqdm==4.66.1
+# Development and testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+black>=23.9.0
+flake8>=6.1.0
 
-# Data visualization (for future dashboard)
-plotly==5.17.0
-dash==2.14.1
+# Optional: Database alternatives (PostgreSQL)
+psycopg2-binary>=2.9.7
 
-# Caching
-redis==5.0.1 
+# Optional: Caching
+redis>=5.0.1
+
+# Optional: Data visualization
+plotly>=5.17.0
+dash>=2.14.0 
