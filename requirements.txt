@@ -1,0 +1,51 @@
+# Core dependencies
+requests==2.31.0
+beautifulsoup4==4.12.2
+selenium==4.15.2
+lxml==4.9.3
+pandas==2.1.2
+openpyxl==3.1.2
+
+# Database
+sqlite3
+
+# Text processing and NLP
+sumy==0.11.0
+nltk==3.8.1
+transformers==4.36.0
+torch==2.1.0
+
+# Web framework (for future API/Dashboard)
+flask==2.3.3
+gunicorn==21.2.0
+
+# Development and testing
+pytest==7.4.3
+pytest-cov==4.1.0
+black==23.9.1
+flake8==6.1.0
+
+# Database migration (future PostgreSQL support)
+psycopg2-binary==2.9.7
+alembic==1.12.1
+
+# Logging and monitoring
+structlog==23.1.0
+
+# Configuration
+python-dotenv==1.0.0
+pydantic==2.4.2
+pydantic-settings==2.0.3
+
+# Date/time handling
+python-dateutil==2.8.2
+
+# Progress bars
+tqdm==4.66.1
+
+# Data visualization (for future dashboard)
+plotly==5.17.0
+dash==2.14.1
+
+# Caching
+redis==5.0.1 
