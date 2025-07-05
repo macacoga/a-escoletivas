@@ -26,9 +26,17 @@ html2text==2020.1.16
 textstat==0.7.3
 wordcloud==1.9.2
 
-# Web framework (for future API/Dashboard)
+# Web framework e API
 flask==2.3.3
+flask-cors==4.0.0
+flask-restx==1.3.0
+marshmallow==3.20.1
+marshmallow-sqlalchemy==0.29.0
 gunicorn==21.2.0
+waitress==2.1.2
+
+# Validação e serialização adicional
+jsonschema==4.20.0
 
 # Development and testing
 pytest==7.4.3
