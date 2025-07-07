@@ -144,18 +144,109 @@ class ExtractiveSummarizer(LoggerMixin):
             return self._empty_summary(f"Erro na sumarização: {str(e)}")
     
     def _preprocess_for_summary(self, text: str) -> str:
-        """Pré-processa texto para sumarização"""
+        """Pré-processa texto para sumarização, removendo cabeçalhos e texto padrão"""
         try:
+            # Padrões de cabeçalhos e texto padrão a serem removidos
+            removal_patterns = [
+                # Cabeçalhos de tribunais
+                r'PODER\s+JUDICIÁRIO[\s\S]*?TRIBUNAL[\s\S]*?REGIÃO[^\n]*',
+                r'JUSTIÇA\s+DO\s+TRABALHO[\s\S]*?REGIÃO[^\n]*',
+                r'TRIBUNAL\s+REGIONAL\s+DO\s+TRABALHO[\s\S]*?REGIÃO[^\n]*',
+                r'\d+[aª]\s+VARA\s+DO\s+TRABALHO[\s\S]*?-\s*[A-Z]{2}[^\n]*',
+                
+                # Números de processo
+                r'ACum\s+\d{7}-\d{2}\.\d{4}\.\d{1}\.\d{2}\.\d{4}[^\n]*',
+                r'RO\s+\d{7}-\d{2}\.\d{4}\.\d{1}\.\d{2}\.\d{4}[^\n]*',
+                r'Processo\s+n[º°]\s*\d{7}-\d{2}\.\d{4}\.\d{1}\.\d{2}\.\d{4}[^\n]*',
+                
+                # Partes do processo (quando muito básicas)
+                r'RECLAMANTE:\s*[A-Z\s]+\n',
+                r'RECLAMADO:\s*[A-Z\s&]+\n',
+                r'REQUERENTE:\s*[A-Z\s]+\n',
+                r'REQUERIDO:\s*[A-Z\s&]+\n',
+                
+                # Termos de certificação
+                r'CERTIDÃO[\s\S]*?CONCLUSÃO[^\n]*',
+                r'TERMO\s+DE\s+CONCLUSÃO[^\n]*',
+                r'Certifico\s+que[^\n]*',
+                r'Remeto\s+os\s+autos[^\n]*',
+                
+                # Cabeçalhos de seções padronizadas
+                r'RELATÓRIO\s*:?\s*\n',
+                r'FUNDAMENTAÇÃO\s*:?\s*\n',
+                r'DISPOSITIVO\s*:?\s*\n',
+                r'EMENTA\s*:?\s*\n',
+                r'ACÓRDÃO\s*:?\s*\n',
+                
+                # Informações administrativas
+                r'Data\s+de\s+julgamento[^\n]*',
+                r'Data\s+de\s+publicação[^\n]*',
+                r'Relator[^\n]*',
+                r'Desembargador[^\n]*',
+                r'Revisor[^\n]*',
+                
+                # Referências de páginas e sistemas
+                r'Página\s+\d+\s+de\s+\d+[^\n]*',
+                r'fls\.\s*\d+[^\n]*',
+                r'Id\.\s*[a-f0-9]+[^\n]*',
+                
+                # Assinaturas digitais e carimbos
+                r'Assinado\s+digitalmente[^\n]*',
+                r'Documento\s+assinado[^\n]*',
+                r'Este\s+documento\s+foi[^\n]*assinado[^\n]*',
+                
+                # Múltiplas quebras de linha
+                r'\n\s*\n\s*\n+',
+            ]
+            
+            # Aplicar remoções
+            cleaned_text = text
+            for pattern in removal_patterns:
+                cleaned_text = re.sub(pattern, '\n', cleaned_text, flags=re.IGNORECASE)
+            
+            # Limpeza adicional
+            # Remover linhas com apenas espaços ou caracteres especiais
+            lines = cleaned_text.split('\n')
+            cleaned_lines = []
+            
+            for line in lines:
+                line = line.strip()
+                # Pular linhas vazias ou com apenas números/símbolos
+                if len(line) < 10:  # Linhas muito curtas provavelmente são cabeçalhos
+                    continue
+                # Pular linhas que são apenas maiúsculas (provavelmente cabeçalhos)
+                if line.isupper() and len(line) < 50:
+                    continue
+                # Pular linhas que são apenas datas ou números
+                if re.match(r'^[\d\s/.-]+$', line):
+                    continue
+                
+                cleaned_lines.append(line)
+            
+            cleaned_text = ' '.join(cleaned_lines)
+            
             # Remover múltiplos espaços
-            text = re.sub(r'\s+', ' ', text)
+            cleaned_text = re.sub(r'\s+', ' ', cleaned_text)
             
             # Corrigir pontuação para melhor segmentação
-            text = re.sub(r'([.!?])\s*([A-Z])', r'\1 \2', text)
+            cleaned_text = re.sub(r'([.!?])\s*([A-Z])', r'\1 \2', cleaned_text)
             
             # Garantir que há espaço após pontos
-            text = re.sub(r'\.([A-Z])', r'. \1', text)
+            cleaned_text = re.sub(r'\.([A-Z])', r'. \1', cleaned_text)
             
-            return text.strip()
+            # Log da limpeza
+            original_length = len(text)
+            cleaned_length = len(cleaned_text)
+            reduction_percentage = ((original_length - cleaned_length) / original_length) * 100
+            
+            self.log_operation(
+                "text_cleaned_for_summary",
+                original_length=original_length,
+                cleaned_length=cleaned_length,
+                reduction_percentage=reduction_percentage
+            )
+            
+            return cleaned_text.strip()
             
         except Exception as e:
             self.log_error(e, "_preprocess_for_summary")

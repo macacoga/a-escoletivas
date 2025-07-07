@@ -90,7 +90,10 @@ class AcoesListResource(Resource):
                        r.resumo_extrativo,
                        r.tema_principal,
                        r.qualidade_texto,
-                       r.confianca_global
+                       r.confianca_global,
+                       r.palavras_chave,
+                       r.entidades_nomeadas,
+                       r.direitos_trabalhistas
                 FROM processos_judiciais p
                 LEFT JOIN resultados_nlp r ON p.id = r.processo_id
                 ORDER BY p.data_coleta DESC
@@ -125,20 +128,27 @@ class AcoesListResource(Resource):
                     'data_julgamento': row[6],
                     'data_publicacao': row[7],
                     'relator': row[8],
-                    'partes': row[9],
-                    'link_decisao': row[10],
-                    'origem_texto': row[11],
-                    'processado_nlp': bool(row[12]),
-                    'data_coleta': row[13],
-                    'data_processamento': row[14],
-                    'tema_principal': row[16] if len(row) > 16 else None,
-                    'qualidade_texto': row[17] if len(row) > 17 else None,
-                    'confianca_global': row[18] if len(row) > 18 else None
+                    'redator': row[9],
+                    'partes': row[10],
+                    'link_decisao': row[11],
+                    'conteudo_bruto_decisao': row[12] if include_content else None,
+                    'origem_texto': row[13],
+                    'colecao_api': row[14],
+                    'id_documento_api': row[15],
+                    'referencia_legislativa': row[16],
+                    'processado_nlp': bool(row[17]),
+                    'data_coleta': row[18],
+                    'data_processamento': row[19],
+                    'metadados': row[20],
+                    # Campos NLP básicos (começam na posição 21)
+                    'tema_principal': row[22] if len(row) > 22 else None,
+                    'qualidade_texto': row[23] if len(row) > 23 else None,
+                    'confianca_global': row[24] if len(row) > 24 else None,
+                    # Campos NLP avançados
+                    'palavras_chave': row[25] if len(row) > 25 else None,
+                    'entidades_nomeadas': row[26] if len(row) > 26 else None,
+                    'direitos_trabalhistas': row[27] if len(row) > 27 else None
                 }
-                
-                # Incluir conteúdo se solicitado
-                if include_content:
-                    processo['conteudo_bruto_decisao'] = row[15] if len(row) > 15 else None
                 
                 processos.append(processo)
             
@@ -188,31 +198,22 @@ class AcaoResource(Resource):
             # Obter banco de dados
             db = get_database()
             
-            # Buscar processo específico
-            query = f"""
+            # Buscar processo e dados NLP
+            query = """
                 SELECT p.*, 
-                       r.id as nlp_id,
-                       r.resumo_extrativo,
-                       r.tema_principal,
-                       r.qualidade_texto,
-                       r.confianca_global,
-                       r.tempo_processamento,
-                       r.metodo_sumarizacao,
-                       r.data_processamento as nlp_data_processamento,
-                       r.texto_processado,
-                       r.entidades_nomeadas,
-                       r.direitos_trabalhistas,
-                       r.valores_monetarios,
-                       r.resumo_estruturado,
-                       r.base_legal
+                       r.id as nlp_id, r.resumo_extrativo, r.tema_principal, r.qualidade_texto, 
+                       r.confianca_global, r.palavras_chave, r.entidades_nomeadas,
+                       r.direitos_trabalhistas, r.valores_monetarios, r.base_legal,
+                       r.tempo_processamento, r.metodo_sumarizacao, r.versao_pipeline,
+                       r.texto_processado, r.resumo_estruturado
                 FROM processos_judiciais p
                 LEFT JOIN resultados_nlp r ON p.id = r.processo_id
-                WHERE p.id = {processo_id}
+                WHERE p.id = ?
             """
             
             with db.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute(query)
+                cursor.execute(query, (processo_id,))
                 row = cursor.fetchone()
             
             if not row:
@@ -231,60 +232,62 @@ class AcaoResource(Resource):
                 'relator': row[8],
                 'partes': row[9],
                 'link_decisao': row[10],
-                'origem_texto': row[11],
-                'processado_nlp': bool(row[12]),
-                'data_coleta': row[13],
-                'data_processamento': row[14]
+                'conteudo_bruto_decisao': row[11] if include_content else None,
+                'origem_texto': row[12],
+                'colecao_api': row[13],
+                'id_documento_api': row[14],
+                'referencia_legislativa': row[15],
+                'processado_nlp': bool(row[16]),
+                'data_coleta': row[17],
+                'data_processamento': row[18],
+                'metadados': row[19]
             }
             
-            # Incluir conteúdo se solicitado
-            if include_content:
-                processo['conteudo_bruto_decisao'] = row[15]
-            
             # Adicionar resultados NLP se disponíveis
-            if row[16]:  # nlp_id
+            if row[21]:  # nlp_id
                 import json
                 
                 processo['resultado_nlp'] = {
-                    'id': row[16],
+                    'id': row[21],
                     'processo_id': processo_id,
-                    'resumo_extrativo': row[17],
-                    'tema_principal': row[18],
-                    'qualidade_texto': row[19],
-                    'confianca_global': row[20],
-                    'tempo_processamento': row[21],
-                    'metodo_sumarizacao': row[22],
-                    'data_processamento': row[23],
-                    'texto_processado': row[24] if include_content else None,
-                    'entidades': [],
-                    'direitos_trabalhistas': [],
-                    'valores_monetarios': [],
-                    'resumo_estruturado': {},
-                    'base_legal': row[28]
+                    'resumo_extrativo': row[22],
+                    'tema_principal': row[23],
+                    'qualidade_texto': row[24],
+                    'confianca_global': row[25],
+                    'palavras_chave': row[26],
+                    'entidades_nomeadas': row[27],
+                    'direitos_trabalhistas': row[28],
+                    'valores_monetarios': row[29],
+                    'base_legal': row[30],
+                    'tempo_processamento': row[31],
+                    'metodo_sumarizacao': row[32],
+                    'versao_pipeline': row[33],
+                    'texto_processado': row[34] if include_content else None,
+                    'resumo_estruturado': row[35]
                 }
                 
                 # Deserializar campos JSON
                 try:
-                    if row[25]:  # entidades_nomeadas
-                        processo['resultado_nlp']['entidades'] = json.loads(row[25])
+                    if row[27]:  # entidades_nomeadas
+                        processo['resultado_nlp']['entidades'] = json.loads(row[27])
                 except (json.JSONDecodeError, TypeError):
                     pass
                 
                 try:
-                    if row[26]:  # direitos_trabalhistas
-                        processo['resultado_nlp']['direitos_trabalhistas'] = json.loads(row[26])
+                    if row[28]:  # direitos_trabalhistas
+                        processo['resultado_nlp']['direitos_trabalhistas'] = json.loads(row[28])
                 except (json.JSONDecodeError, TypeError):
                     pass
                 
                 try:
-                    if row[27]:  # valores_monetarios
-                        processo['resultado_nlp']['valores_monetarios'] = json.loads(row[27])
+                    if row[29]:  # valores_monetarios
+                        processo['resultado_nlp']['valores_monetarios'] = json.loads(row[29])
                 except (json.JSONDecodeError, TypeError):
                     pass
                 
                 try:
-                    if row[28]:  # resumo_estruturado
-                        processo['resultado_nlp']['resumo_estruturado'] = json.loads(row[28])
+                    if row[35]:  # resumo_estruturado
+                        processo['resultado_nlp']['resumo_estruturado'] = json.loads(row[35])
                 except (json.JSONDecodeError, TypeError):
                     pass
             
@@ -429,7 +432,10 @@ class AcoesSearchResource(Resource):
                        r.resumo_extrativo,
                        r.tema_principal,
                        r.qualidade_texto,
-                       r.confianca_global
+                       r.confianca_global,
+                       r.palavras_chave,
+                       r.entidades_nomeadas,
+                       r.direitos_trabalhistas
                 FROM processos_judiciais p
                 LEFT JOIN resultados_nlp r ON p.id = r.processo_id
                 {where_clause}
@@ -476,9 +482,14 @@ class AcoesSearchResource(Resource):
                     'processado_nlp': bool(row[12]),
                     'data_coleta': row[13],
                     'data_processamento': row[14],
+                    # Campos NLP básicos
                     'tema_principal': row[16] if len(row) > 16 else None,
                     'qualidade_texto': row[17] if len(row) > 17 else None,
-                    'confianca_global': row[18] if len(row) > 18 else None
+                    'confianca_global': row[18] if len(row) > 18 else None,
+                    # Campos NLP avançados
+                    'palavras_chave': row[19] if len(row) > 19 else None,
+                    'entidades_nomeadas': row[20] if len(row) > 20 else None,
+                    'direitos_trabalhistas': row[21] if len(row) > 21 else None
                 }
                 
                 # Incluir conteúdo se solicitado
@@ -551,7 +562,8 @@ class AcaoResumoResource(Resource):
                        p.relator, p.partes, p.conteudo_bruto_decisao,
                        r.resumo_extrativo, r.tema_principal, r.qualidade_texto, 
                        r.confianca_global, r.palavras_chave, r.entidades_nomeadas,
-                       r.direitos_trabalhistas, r.valores_monetarios
+                       r.direitos_trabalhistas, r.valores_monetarios,
+                       r.base_legal, r.resumo_estruturado
                 FROM processos_judiciais p
                 LEFT JOIN resultados_nlp r ON p.id = r.processo_id
                 WHERE p.id = ?
@@ -581,6 +593,9 @@ class AcaoResumoResource(Resource):
             entidades_nomeadas = row[12]
             direitos_trabalhistas = row[13]
             valores_monetarios = row[14]
+            # Novos campos NLP avançados
+            base_legal = row[15] if len(row) > 15 else None
+            resumo_estruturado = row[16] if len(row) > 16 else None
             
             # Gerar resumo inteligente
             resumo_parts = []
@@ -600,6 +615,7 @@ class AcaoResumoResource(Resource):
                 resumo_parts.append(f"versando sobre {primeira_frase}")
             
             # Analisar resultado da decisão usando o analisador inteligente
+            # Usar análise em tempo real
             from ...nlp.resultado_analyzer import ResultadoAnalyzer
             
             analyzer = ResultadoAnalyzer()
@@ -665,7 +681,7 @@ class AcaoResumoResource(Resource):
             # Resumo das partes
             partes_resumo = "Partes não identificadas"
             if partes:
-                # Simplificar nomes das partes
+                # Formatação simples das partes
                 partes_clean = partes.replace('\n', ' ').replace('\r', ' ')
                 if len(partes_clean) > 100:
                     partes_resumo = partes_clean[:100] + "..."
@@ -678,6 +694,10 @@ class AcaoResumoResource(Resource):
             # Adicionar contexto do resumo extrativo se disponível
             if resumo_extrativo and len(resumo_extrativo) > 50:
                 resumo_final += f"\n\nResumo da decisão: {resumo_extrativo[:300]}..."
+            
+            # Adicionar referências legislativas se disponíveis
+            if base_legal:
+                resumo_final += f"\n\nReferências legais: {base_legal}"
             
             response_data = {
                 'processo': numero_processo,

@@ -477,7 +477,10 @@ class ResultadoAnalyzer:
             
             for direito in direitos:
                 if isinstance(direito, dict):
-                    outcome = direito.get('decision_outcome', '').lower()
+                    outcome = direito.get('decision_outcome', '')
+                    if outcome is None:
+                        outcome = ''
+                    outcome = outcome.lower()
                     tipo = direito.get('type', direito.get('description', 'Direito'))
                     
                     if outcome in ['granted', 'concedido', 'deferido']:

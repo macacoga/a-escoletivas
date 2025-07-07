@@ -75,23 +75,40 @@ def show_stats(db: DatabaseManager):
 
 
 def import_excel(db: DatabaseManager, excel_file: str, column_name: str):
-    """Importa processos de arquivo Excel ou CSV"""
+    """Importa processos de arquivo Excel ou CSV com filtros específicos"""
     logger = get_logger("CLI")
     
     try:
         from ..database.models import ProcessoJudicial
         
         handler = ExcelHandler()
-        processos = handler.read_processo_numbers(excel_file, column_name)
         
-        logger.info(f"Encontrados {len(processos)} processos no arquivo")
+        # Aplicar filtros específicos: polo_ativo contendo "SIND" (em JSON) e uf_oj igual a "DF"
+        filters = {
+            'polo_ativo': {'json_contains': 'SIND'},
+            'uf_oj': {'equals': 'DF'}
+        }
         
-        print(f"\nProcessos encontrados: {len(processos)}")
+        print(f"📋 Aplicando filtros:")
+        print(f"   • polo_ativo: contém 'SIND' (em JSON)")
+        print(f"   • uf_oj: igual a 'DF'")
+        
+        processos = handler.read_filtered_processo_numbers(excel_file, column_name, filters)
+        
+        logger.info(f"Encontrados {len(processos)} processos no arquivo após filtros")
+        
+        print(f"\nProcessos encontrados após filtros: {len(processos)}")
         for i, processo in enumerate(processos[:5]):  # Mostra apenas os primeiros 5
             print(f"{i+1}. {processo}")
         
         if len(processos) > 5:
             print(f"... e mais {len(processos) - 5} processos")
+        
+        if len(processos) == 0:
+            print("\n⚠️  Nenhum processo encontrado com os filtros aplicados!")
+            print("   Verifique se as colunas 'polo_ativo' e 'uf_oj' existem no arquivo")
+            print("   e se existem processos com polo_ativo iniciando com 'SIND' e uf_oj = 'DF'")
+            return
         
         # Salvar os números de processo no banco como registros "vazios"
         print(f"\n💾 Salvando processos no banco de dados...")
@@ -116,10 +133,10 @@ def import_excel(db: DatabaseManager, excel_file: str, column_name: str):
                         partes="",
                         link_decisao="",
                         conteudo_bruto_decisao="",  # Campo vazio indica que precisa de scraping
-                        origem_texto="Importação CSV/Excel",
+                        origem_texto="Importação CSV/Excel - Filtrado (SIND/DF)",
                         colecao_api="",
                         id_documento_api="import_placeholder",
-                        metadados=f'{{"fonte": "{excel_file}", "coluna": "{column_name}"}}'
+                        metadados=f'{{"fonte": "{excel_file}", "coluna": "{column_name}", "filtros": {{"polo_ativo": "SIND (JSON)", "uf_oj": "DF"}}}}'
                     )
                     
                     db.insert_processo(processo)

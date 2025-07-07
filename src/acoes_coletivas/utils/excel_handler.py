@@ -347,4 +347,124 @@ class ExcelHandler(LoggerMixin):
             
         except Exception as e:
             self.log_error(e, "clean_processo_numbers")
+            raise
+    
+    def read_filtered_processo_numbers(self, file_path: str, column_name: str, filters: Dict[str, Any]) -> List[str]:
+        """
+        Lê números de processo de um arquivo Excel ou CSV com filtros
+        
+        Args:
+            file_path: Caminho para o arquivo Excel ou CSV
+            column_name: Nome da coluna com os números de processo
+            filters: Dicionário com filtros a serem aplicados
+                    formato: {'coluna': 'valor'} ou {'coluna': {'startswith': 'valor'}}
+            
+        Returns:
+            Lista de números de processo filtrados
+        """
+        try:
+            # Verificar se o arquivo existe
+            if not Path(file_path).exists():
+                raise FileNotFoundError(f"Arquivo não encontrado: {file_path}")
+            
+            # Detectar tipo de arquivo baseado na extensão
+            file_extension = Path(file_path).suffix.lower()
+            
+            if file_extension in ['.xlsx', '.xls']:
+                # Ler arquivo Excel
+                df = pd.read_excel(file_path, engine='openpyxl')
+            elif file_extension == '.csv':
+                # Ler arquivo CSV
+                df = pd.read_csv(file_path, sep=';', encoding='utf-8')
+            else:
+                raise ValueError(f"Formato de arquivo não suportado: {file_extension}. Use .xlsx, .xls ou .csv")
+            
+            # Verificar se a coluna existe
+            if column_name not in df.columns:
+                available_columns = df.columns.tolist()
+                self.logger.error(
+                    "column_not_found",
+                    file_path=file_path,
+                    column_name=column_name,
+                    available_columns=available_columns
+                )
+                raise ValueError(f"Coluna '{column_name}' não encontrada. Colunas disponíveis: {available_columns}")
+            
+            # Aplicar filtros
+            filtered_df = df.copy()
+            applied_filters = {}
+            
+            for col_name, filter_value in filters.items():
+                if col_name not in df.columns:
+                    self.logger.warning(f"Coluna de filtro '{col_name}' não encontrada. Ignorando.")
+                    continue
+                
+                # Converter para string para comparação
+                filtered_df[col_name] = filtered_df[col_name].astype(str)
+                
+                if isinstance(filter_value, dict):
+                    # Filtro avançado
+                    if 'startswith' in filter_value:
+                        # Converter para string e aplicar filtro
+                        col_series = pd.Series(filtered_df[col_name]).astype(str)
+                        mask = col_series.str.startswith(filter_value['startswith'], na=False)
+                        filtered_df = filtered_df[mask]
+                        applied_filters[col_name] = f"inicia com '{filter_value['startswith']}'"
+                    elif 'contains' in filter_value:
+                        # Converter para string e aplicar filtro
+                        col_series = pd.Series(filtered_df[col_name]).astype(str)
+                        mask = col_series.str.contains(filter_value['contains'], na=False)
+                        filtered_df = filtered_df[mask]
+                        applied_filters[col_name] = f"contém '{filter_value['contains']}'"
+                    elif 'equals' in filter_value:
+                        mask = filtered_df[col_name] == filter_value['equals']
+                        filtered_df = filtered_df[mask]
+                        applied_filters[col_name] = f"igual a '{filter_value['equals']}'"
+                    elif 'json_contains' in filter_value:
+                        # Filtro especial para campos JSON que contêm um valor
+                        import json
+                        def json_contains(value, search_term):
+                            if pd.isna(value):
+                                return False
+                            try:
+                                if isinstance(value, str) and value.startswith('{'):
+                                    parsed = json.loads(value)
+                                    if isinstance(parsed, list) and len(parsed) > 0:
+                                        return search_term.upper() in parsed[0].upper()
+                                    elif isinstance(parsed, str):
+                                        return search_term.upper() in parsed.upper()
+                                return search_term.upper() in str(value).upper()
+                            except:
+                                return search_term.upper() in str(value).upper()
+                        
+                        mask = filtered_df[col_name].apply(lambda x: json_contains(x, filter_value['json_contains']))
+                        filtered_df = filtered_df[mask]
+                        applied_filters[col_name] = f"contém '{filter_value['json_contains']}' (JSON)"
+                else:
+                    # Filtro simples (igualdade)
+                    mask = filtered_df[col_name] == str(filter_value)
+                    filtered_df = filtered_df[mask]
+                    applied_filters[col_name] = f"igual a '{filter_value}'"
+            
+            # Extrair números de processo
+            processos = filtered_df[column_name].astype(str).tolist()
+            
+            # Remover valores NaN/None
+            processos = [p for p in processos if p != 'nan' and p != 'None' and p.strip()]
+            
+            self.log_operation(
+                "filtered_processo_numbers_read",
+                file_path=file_path,
+                column_name=column_name,
+                filters_applied=applied_filters,
+                total_before_filter=len(df),
+                total_after_filter=len(filtered_df),
+                total_processos=len(processos),
+                file_type=file_extension
+            )
+            
+            return processos
+            
+        except Exception as e:
+            self.log_error(e, "read_filtered_processo_numbers", file_path=file_path, column_name=column_name, filters=filters)
             raise 
