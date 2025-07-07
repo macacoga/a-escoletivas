@@ -20,10 +20,10 @@ class ExcelHandler(LoggerMixin):
     
     def read_processo_numbers(self, file_path: str, column_name: str) -> List[str]:
         """
-        Lê números de processo de um arquivo Excel
+        Lê números de processo de um arquivo Excel ou CSV
         
         Args:
-            file_path: Caminho para o arquivo Excel
+            file_path: Caminho para o arquivo Excel ou CSV
             column_name: Nome da coluna com os números de processo
             
         Returns:
@@ -34,8 +34,17 @@ class ExcelHandler(LoggerMixin):
             if not Path(file_path).exists():
                 raise FileNotFoundError(f"Arquivo não encontrado: {file_path}")
             
-            # Ler o arquivo Excel
-            df = pd.read_excel(file_path, engine='openpyxl')
+            # Detectar tipo de arquivo baseado na extensão
+            file_extension = Path(file_path).suffix.lower()
+            
+            if file_extension in ['.xlsx', '.xls']:
+                # Ler arquivo Excel
+                df = pd.read_excel(file_path, engine='openpyxl')
+            elif file_extension == '.csv':
+                # Ler arquivo CSV
+                df = pd.read_csv(file_path, sep=';', encoding='utf-8')
+            else:
+                raise ValueError(f"Formato de arquivo não suportado: {file_extension}. Use .xlsx, .xls ou .csv")
             
             # Verificar se a coluna existe
             if column_name not in df.columns:
@@ -58,7 +67,8 @@ class ExcelHandler(LoggerMixin):
                 "processo_numbers_read",
                 file_path=file_path,
                 column_name=column_name,
-                total_processos=len(processos)
+                total_processos=len(processos),
+                file_type=file_extension
             )
             
             return processos
@@ -69,11 +79,11 @@ class ExcelHandler(LoggerMixin):
     
     def read_excel_data(self, file_path: str, sheet_name: Optional[str] = None) -> pd.DataFrame:
         """
-        Lê dados completos de um arquivo Excel
+        Lê dados completos de um arquivo Excel ou CSV
         
         Args:
-            file_path: Caminho para o arquivo Excel
-            sheet_name: Nome da planilha (opcional)
+            file_path: Caminho para o arquivo Excel ou CSV
+            sheet_name: Nome da planilha (opcional, apenas para Excel)
             
         Returns:
             DataFrame com os dados
@@ -82,14 +92,33 @@ class ExcelHandler(LoggerMixin):
             if not Path(file_path).exists():
                 raise FileNotFoundError(f"Arquivo não encontrado: {file_path}")
             
-            df = pd.read_excel(file_path, sheet_name=sheet_name, engine='openpyxl')
+            # Detectar tipo de arquivo baseado na extensão
+            file_extension = Path(file_path).suffix.lower()
+            
+            if file_extension in ['.xlsx', '.xls']:
+                # Ler arquivo Excel
+                if sheet_name is None:
+                    # Se não especificar sheet_name, pegar a primeira planilha
+                    df = pd.read_excel(file_path, engine='openpyxl')
+                    if isinstance(df, dict):
+                        # Se retornou um dicionário, pegar a primeira planilha
+                        first_sheet = list(df.keys())[0]
+                        df = df[first_sheet]
+                else:
+                    df = pd.read_excel(file_path, sheet_name=sheet_name, engine='openpyxl')
+            elif file_extension == '.csv':
+                # Ler arquivo CSV
+                df = pd.read_csv(file_path, sep=';', encoding='utf-8')
+            else:
+                raise ValueError(f"Formato de arquivo não suportado: {file_extension}. Use .xlsx, .xls ou .csv")
             
             self.log_operation(
                 "excel_data_read",
                 file_path=file_path,
                 sheet_name=sheet_name,
                 rows=len(df),
-                columns=len(df.columns)
+                columns=len(df.columns),
+                file_type=file_extension
             )
             
             return df
@@ -222,10 +251,10 @@ class ExcelHandler(LoggerMixin):
     
     def get_excel_info(self, file_path: str) -> Dict[str, Any]:
         """
-        Obtém informações sobre um arquivo Excel
+        Obtém informações sobre um arquivo Excel ou CSV
         
         Args:
-            file_path: Caminho para o arquivo Excel
+            file_path: Caminho para o arquivo Excel ou CSV
             
         Returns:
             Dicionário com informações do arquivo
@@ -234,8 +263,21 @@ class ExcelHandler(LoggerMixin):
             if not Path(file_path).exists():
                 raise FileNotFoundError(f"Arquivo não encontrado: {file_path}")
             
-            # Ler informações básicas
-            df = pd.read_excel(file_path, engine='openpyxl')
+            # Detectar tipo de arquivo baseado na extensão
+            file_extension = Path(file_path).suffix.lower()
+            
+            if file_extension in ['.xlsx', '.xls']:
+                # Ler arquivo Excel
+                df = pd.read_excel(file_path, engine='openpyxl')
+                if isinstance(df, dict):
+                    # Se retornou um dicionário, pegar a primeira planilha
+                    first_sheet = list(df.keys())[0]
+                    df = df[first_sheet]
+            elif file_extension == '.csv':
+                # Ler arquivo CSV
+                df = pd.read_csv(file_path, sep=';', encoding='utf-8')
+            else:
+                raise ValueError(f"Formato de arquivo não suportado: {file_extension}. Use .xlsx, .xls ou .csv")
             
             info = {
                 'file_path': file_path,
@@ -245,14 +287,16 @@ class ExcelHandler(LoggerMixin):
                 'column_names': df.columns.tolist(),
                 'data_types': df.dtypes.to_dict(),
                 'null_counts': df.isnull().sum().to_dict(),
-                'sample_data': df.head().to_dict('records')
+                'sample_data': df.head().to_dict('records'),
+                'file_type': file_extension
             }
             
             self.log_operation(
                 "excel_info_retrieved",
                 file_path=file_path,
                 rows=info['total_rows'],
-                columns=info['total_columns']
+                columns=info['total_columns'],
+                file_type=file_extension
             )
             
             return info

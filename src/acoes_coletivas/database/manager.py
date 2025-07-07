@@ -48,12 +48,14 @@ class DatabaseManager(LoggerMixin):
                     data_julgamento TEXT,
                     data_publicacao TEXT,
                     relator TEXT,
+                    redator TEXT,
                     partes TEXT,
                     link_decisao TEXT,
                     conteudo_bruto_decisao TEXT,
                     origem_texto TEXT,
                     colecao_api TEXT,
                     id_documento_api TEXT,
+                    referencia_legislativa TEXT,
                     processado_nlp BOOLEAN DEFAULT FALSE,
                     data_coleta TEXT NOT NULL,
                     data_processamento TEXT,
@@ -151,18 +153,18 @@ class DatabaseManager(LoggerMixin):
                 INSERT INTO processos_judiciais (
                     numero_processo, numero_processo_planilha, tribunal,
                     classe_processo, tipo_documento, data_julgamento,
-                    data_publicacao, relator, partes, link_decisao,
+                    data_publicacao, relator, redator, partes, link_decisao,
                     conteudo_bruto_decisao, origem_texto, colecao_api,
-                    id_documento_api, processado_nlp, data_coleta,
+                    id_documento_api, referencia_legislativa, processado_nlp, data_coleta,
                     data_processamento, metadados
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 processo.numero_processo, processo.numero_processo_planilha,
                 processo.tribunal, processo.classe_processo, processo.tipo_documento,
                 processo.data_julgamento, processo.data_publicacao, processo.relator,
-                processo.partes, processo.link_decisao, processo.conteudo_bruto_decisao,
+                processo.redator, processo.partes, processo.link_decisao, processo.conteudo_bruto_decisao,
                 processo.origem_texto, processo.colecao_api, processo.id_documento_api,
-                processo.processado_nlp, processo.data_coleta.isoformat(),
+                processo.referencia_legislativa, processo.processado_nlp, processo.data_coleta.isoformat(),
                 processo.data_processamento.isoformat() if processo.data_processamento else None,
                 processo.metadados
             ))
@@ -176,7 +178,7 @@ class DatabaseManager(LoggerMixin):
                 numero_processo=processo.numero_processo_planilha
             )
             
-            return processo_id
+            return processo_id if processo_id else 0
     
     def get_processo_by_id(self, processo_id: int) -> Optional[ProcessoJudicial]:
         """Busca um processo por ID"""
@@ -191,25 +193,40 @@ class DatabaseManager(LoggerMixin):
             return None
     
     def get_processos_nao_processados(self, limit: int = 100) -> List[ProcessoJudicial]:
-        """Busca processos que ainda não foram processados por NLP"""
+        """Busca processos que ainda não foram processados por NLP e têm texto"""
         with self.get_connection() as conn:
             cursor = conn.execute('''
                 SELECT * FROM processos_judiciais 
-                WHERE processado_nlp = FALSE 
+                WHERE processado_nlp = 0 
+                AND conteudo_bruto_decisao IS NOT NULL 
+                AND LENGTH(conteudo_bruto_decisao) > 100
+                ORDER BY id DESC
                 LIMIT ?
             ''', (limit,))
             
             return [ProcessoJudicial.from_dict(dict(row)) for row in cursor.fetchall()]
     
-    def update_processo_processado(self, processo_id: int, data_processamento: datetime = None):
+    def get_processos_sem_conteudo(self, limit: int = 100) -> List[ProcessoJudicial]:
+        """Busca processos que precisam de coleta (sem conteúdo)"""
+        with self.get_connection() as conn:
+            cursor = conn.execute('''
+                SELECT * FROM processos_judiciais 
+                WHERE (conteudo_bruto_decisao IS NULL OR conteudo_bruto_decisao = '')
+                AND numero_processo_planilha IS NOT NULL
+                AND numero_processo_planilha != ''
+                ORDER BY id ASC
+                LIMIT ?
+            ''', (limit,))
+            
+            return [ProcessoJudicial.from_dict(dict(row)) for row in cursor.fetchall()]
+    
+    def update_processo_processado(self, processo_id: int, data_processamento: datetime = datetime.now()):
         """Marca um processo como processado"""
-        if data_processamento is None:
-            data_processamento = datetime.now()
         
         with self.get_connection() as conn:
             conn.execute('''
                 UPDATE processos_judiciais 
-                SET processado_nlp = TRUE, data_processamento = ?
+                SET processado_nlp = 1, data_processamento = ?
                 WHERE id = ?
             ''', (data_processamento.isoformat(), processo_id))
             
@@ -263,7 +280,7 @@ class DatabaseManager(LoggerMixin):
                 processo_id=resultado.processo_id
             )
             
-            return resultado_id
+            return resultado_id if resultado_id else 0
     
     def get_resultado_nlp_by_processo(self, processo_id: int) -> Optional[ResultadoNLP]:
         """Busca resultado NLP por processo"""
@@ -293,7 +310,7 @@ class DatabaseManager(LoggerMixin):
             ))
             
             conn.commit()
-            return cursor.lastrowid
+            return cursor.lastrowid if cursor.lastrowid else 0
     
     def get_logs_by_operacao(self, operacao: str, limit: int = 100) -> List[LogExecucao]:
         """Busca logs por operação"""
@@ -318,7 +335,7 @@ class DatabaseManager(LoggerMixin):
             stats['total_processos'] = cursor.fetchone()[0]
             
             # Contagem de processos processados
-            cursor = conn.execute('SELECT COUNT(*) FROM processos_judiciais WHERE processado_nlp = TRUE')
+            cursor = conn.execute('SELECT COUNT(*) FROM processos_judiciais WHERE processado_nlp = 1')
             stats['processos_processados'] = cursor.fetchone()[0]
             
             # Contagem de resultados NLP
@@ -361,7 +378,7 @@ class DatabaseManager(LoggerMixin):
             ))
             
             conn.commit()
-            return cursor.lastrowid
+            return cursor.lastrowid if cursor.lastrowid else 0
     
     def get_latest_estatisticas_nlp(self) -> Optional[EstatisticasNLP]:
         """Busca as estatísticas NLP mais recentes"""
@@ -490,7 +507,7 @@ class DatabaseManager(LoggerMixin):
             erros = 0
             
             for processo in processos:
-                if self.processar_texto_nlp(processo.id, pipeline):
+                if self.processar_texto_nlp(processo.id if processo.id else 0, pipeline):
                     sucessos += 1
                 else:
                     erros += 1
@@ -519,7 +536,12 @@ class DatabaseManager(LoggerMixin):
         with self.get_connection() as conn:
             stats = {}
             
-            # Estatísticas básicas
+            # Total de processos no banco
+            cursor = conn.execute('SELECT COUNT(*) as total FROM processos_judiciais')
+            total_processos = cursor.fetchone()['total']
+            stats['total_processos'] = total_processos
+            
+            # Estatísticas básicas de NLP
             cursor = conn.execute('''
                 SELECT 
                     COUNT(*) as total_resultados,
@@ -533,7 +555,48 @@ class DatabaseManager(LoggerMixin):
             
             row = cursor.fetchone()
             if row:
-                stats.update(dict(row))
+                stats['processos_com_nlp'] = row['total_resultados']
+                stats['qualidade_media'] = row['qualidade_media'] or 0
+                stats['confianca_media'] = row['confianca_media'] or 0
+                stats['tempo_medio'] = row['tempo_medio'] or 0
+                stats['primeiro_processamento'] = row['primeiro_processamento']
+                stats['ultimo_processamento'] = row['ultimo_processamento']
+            else:
+                stats['processos_com_nlp'] = 0
+                stats['qualidade_media'] = 0
+                stats['confianca_media'] = 0
+                stats['tempo_medio'] = 0
+                stats['primeiro_processamento'] = None
+                stats['ultimo_processamento'] = None
+            
+            # Taxa de cobertura
+            if total_processos > 0:
+                stats['taxa_cobertura'] = (stats['processos_com_nlp'] / total_processos) * 100
+            else:
+                stats['taxa_cobertura'] = 0
+            
+            # Temas mais comuns
+            cursor = conn.execute('''
+                SELECT tema_principal, COUNT(*) as count
+                FROM resultados_nlp
+                WHERE tema_principal IS NOT NULL AND tema_principal != 'Não identificado'
+                GROUP BY tema_principal
+                ORDER BY count DESC
+                LIMIT 10
+            ''')
+            stats['temas_comuns'] = [(row['tema_principal'], row['count']) for row in cursor.fetchall()]
+            
+            # Distribuição por tribunal
+            cursor = conn.execute('''
+                SELECT p.tribunal, COUNT(*) as count
+                FROM resultados_nlp r
+                JOIN processos_judiciais p ON r.processo_id = p.id
+                WHERE p.tribunal IS NOT NULL
+                GROUP BY p.tribunal
+                ORDER BY count DESC
+                LIMIT 10
+            ''')
+            stats['tribunais_distribuicao'] = [(row['tribunal'], row['count']) for row in cursor.fetchall()]
             
             # Distribuição de métodos de sumarização
             cursor = conn.execute('''
@@ -541,7 +604,6 @@ class DatabaseManager(LoggerMixin):
                 FROM resultados_nlp
                 GROUP BY metodo_sumarizacao
             ''')
-            
             stats['metodos_sumarizacao'] = {row['metodo_sumarizacao']: row['count'] for row in cursor.fetchall()}
             
             # Distribuição de qualidade
@@ -559,7 +621,7 @@ class DatabaseManager(LoggerMixin):
             
             return stats
     
-    def export_nlp_results(self, output_path: str = None) -> str:
+    def export_nlp_results(self, output_path: str = "data/nlp_results.json") -> str:
         """
         Exporta resultados NLP para arquivo JSON
         
@@ -632,3 +694,132 @@ class DatabaseManager(LoggerMixin):
         except Exception as e:
             self.log_error(e, "export_nlp_results")
             raise
+    
+    def processar_texto_nlp_enhanced(self, processo_id: int, pipeline) -> bool:
+        """
+        Processa um texto específico através do pipeline NLP aprimorado
+        
+        Args:
+            processo_id: ID do processo
+            pipeline: Instância do pipeline NLP
+            
+        Returns:
+            True se processado com sucesso, False caso contrário
+        """
+        try:
+            # Buscar processo
+            processo = self.get_processo_by_id(processo_id)
+            if not processo:
+                return False
+            
+            # Verificar se já foi processado
+            if processo.processado_nlp:
+                return True
+            
+            # Preparar referências legislativas existentes
+            existing_references = []
+            if processo.referencia_legislativa:
+                try:
+                    existing_references = json.loads(processo.referencia_legislativa)
+                except json.JSONDecodeError:
+                    existing_references = []
+            
+            # Processar com pipeline aprimorado
+            resultado_enhanced = pipeline.process_text_enhanced(
+                processo.conteudo_bruto_decisao,
+                str(processo_id),
+                existing_parts=processo.partes,
+                existing_references=existing_references
+            )
+            
+            # Criar objeto ResultadoNLP com dados aprimorados
+            resultado_db = ResultadoNLP(
+                processo_id=processo_id,
+                texto_processado=resultado_enhanced['text_quality'].get('processed_text', ''),
+                resumo_extrativo=resultado_enhanced.get('resumo_extrativo', ''),
+                resumo_estruturado=json.dumps(resultado_enhanced.get('structured_summary', {}), ensure_ascii=False),
+                palavras_chave=json.dumps(resultado_enhanced.get('palavras_chave', []), ensure_ascii=False),
+                tema_principal=resultado_enhanced.get('tema_principal', 'Não identificado'),
+                entidades_nomeadas=json.dumps(resultado_enhanced.get('entities', []), ensure_ascii=False),
+                direitos_trabalhistas=json.dumps(resultado_enhanced.get('worker_rights', []), ensure_ascii=False),
+                valores_monetarios=json.dumps(self._extract_monetary_values_enhanced(resultado_enhanced), ensure_ascii=False),
+                base_legal=json.dumps(self._extract_legal_references_enhanced(resultado_enhanced), ensure_ascii=False),
+                qualidade_texto=resultado_enhanced['text_quality'].get('quality_score', 0.0),
+                confianca_global=resultado_enhanced.get('confidence_score', 0.0),
+                tempo_processamento=resultado_enhanced.get('processing_time', 0.0),
+                metodo_sumarizacao='enhanced_structured',
+                versao_pipeline='2.0.0',
+                metadados_nlp=json.dumps({
+                    **resultado_enhanced,
+                    'resultado_principal': resultado_enhanced.get('resultado_principal', 'Resultado não identificado'),
+                    'partes_formatadas': resultado_enhanced.get('partes_formatadas', ''),
+                    'referencias_formatadas': resultado_enhanced.get('referencias_formatadas', '')
+                }, ensure_ascii=False, default=str)
+            )
+            
+            # Salvar resultado
+            self.insert_resultado_nlp(resultado_db)
+            
+            # Marcar processo como processado
+            self.update_processo_processado(processo_id)
+            
+            return True
+            
+        except Exception as e:
+            self.log_error(e, "processar_texto_nlp_enhanced", processo_id=processo_id)
+            return False
+    
+    def _extract_monetary_values_enhanced(self, resultado_enhanced: Dict) -> List[Dict]:
+        """Extrai valores monetários do resultado aprimorado"""
+        monetary_values = []
+        
+        # Valores do resumo estruturado
+        structured_summary = resultado_enhanced.get('structured_summary', {})
+        valores_envolvidos = structured_summary.get('valores_envolvidos', [])
+        
+        for valor in valores_envolvidos:
+            monetary_values.append({
+                'text': valor.get('text', ''),
+                'numeric_value': valor.get('numeric_value'),
+                'context': valor.get('context', ''),
+                'confidence': 0.9
+            })
+        
+        # Valores das entidades (fallback)
+        entities = resultado_enhanced.get('entities', [])
+        for entity in entities:
+            if entity.get('label') == 'MONEY':
+                monetary_values.append({
+                    'text': entity.get('text', ''),
+                    'confidence': entity.get('confidence', 0.8)
+                })
+        
+        return monetary_values
+    
+    def _extract_legal_references_enhanced(self, resultado_enhanced: Dict) -> List[Dict]:
+        """Extrai referências legais do resultado aprimorado"""
+        legal_refs = []
+        
+        # Referências do extrator
+        legal_references = resultado_enhanced.get('legal_references', {})
+        references = legal_references.get('references', [])
+        
+        for ref in references:
+            legal_refs.append({
+                'text': ref.get('text', ''),
+                'type': ref.get('type', ''),
+                'source': ref.get('source', ''),
+                'confidence': ref.get('confidence', 0.8)
+            })
+        
+        # Referências das entidades (fallback)
+        entities = resultado_enhanced.get('entities', [])
+        for entity in entities:
+            if entity.get('label') == 'LAW':
+                legal_refs.append({
+                    'text': entity.get('text', ''),
+                    'type': 'law',
+                    'confidence': entity.get('confidence', 0.7)
+                })
+        
+        return legal_refs

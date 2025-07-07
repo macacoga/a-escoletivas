@@ -24,12 +24,14 @@ class ProcessoJudicial:
     data_julgamento: Optional[str] = None
     data_publicacao: Optional[str] = None
     relator: str = ""
+    redator: str = ""
     partes: str = ""
     link_decisao: str = ""
     conteudo_bruto_decisao: str = ""
     origem_texto: str = ""
     colecao_api: str = ""
     id_documento_api: str = ""
+    referencia_legislativa: str = ""  # JSON string para armazenar a lista
     processado_nlp: bool = False
     data_coleta: datetime = field(default_factory=datetime.now)
     data_processamento: Optional[datetime] = None
@@ -47,12 +49,14 @@ class ProcessoJudicial:
             'data_julgamento': self.data_julgamento,
             'data_publicacao': self.data_publicacao,
             'relator': self.relator,
+            'redator': self.redator,
             'partes': self.partes,
             'link_decisao': self.link_decisao,
             'conteudo_bruto_decisao': self.conteudo_bruto_decisao,
             'origem_texto': self.origem_texto,
             'colecao_api': self.colecao_api,
             'id_documento_api': self.id_documento_api,
+            'referencia_legislativa': self.referencia_legislativa,
             'processado_nlp': self.processado_nlp,
             'data_coleta': self.data_coleta.isoformat() if self.data_coleta else None,
             'data_processamento': self.data_processamento.isoformat() if self.data_processamento else None,

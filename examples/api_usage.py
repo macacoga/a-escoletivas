@@ -58,7 +58,7 @@ class APIClient:
         params = {'limite': limite, 'apenas_nlp': apenas_nlp}
         return self.get('/api/topicos', params=params)
     
-    def get_direitos(self, limite: int = 20, resultado: str = None, 
+    def get_direitos(self, limite: int = 20, resultado: str = "granted", 
                      detalhado: bool = False) -> Dict:
         """Listar direitos trabalhistas"""
         params = {'limite': limite, 'detalhado': detalhado}

@@ -7,6 +7,6 @@ de dados de ações coletivas judiciais.
 """
 
 __version__ = "1.0.0"
-__author__ = "Pedro"
-__email__ = "pedro@example.com"
+__author__ = "xyrlan "
+__email__ = "xyrlan.coding@gmail.com"
 __license__ = "MIT" 

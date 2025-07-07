@@ -20,6 +20,17 @@ class WorkerRight:
     context_sentences: List[str]
     decision_outcome: Optional[str] = None  # 'granted', 'denied', 'partially_granted'
     confidence: float = 0.0
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Converte direito trabalhista para dicionário"""
+        return {
+            'type': self.type,
+            'description': self.description,
+            'mentions': self.mentions,
+            'context_sentences': self.context_sentences,
+            'decision_outcome': self.decision_outcome,
+            'confidence': self.confidence
+        }
 
 
 class RightsAnalyzer(LoggerMixin):

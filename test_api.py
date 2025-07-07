@@ -135,6 +135,45 @@ class APITester:
             print("   ⚠️  Nenhuma ação encontrada para teste individual")
             return {'success': False, 'error': 'Nenhuma ação encontrada'}
     
+    def test_resumo_rapido(self):
+        """Testa resumo rápido de uma ação"""
+        # Primeiro, buscar uma ação processada pelo NLP
+        acoes_result = self.test_endpoint('/api/acoes', params={
+            'page': 1, 
+            'per_page': 5
+        })
+        
+        if acoes_result['success'] and acoes_result['data'].get('data'):
+            # Procurar uma ação processada pelo NLP
+            for acao in acoes_result['data']['data']:
+                if acao.get('processado_nlp'):
+                    acao_id = acao['id']
+                    print(f"   📋 Testando resumo do processo {acao.get('numero_processo', acao_id)}")
+                    return self.test_endpoint(f'/api/acoes/{acao_id}/resumo')
+            
+            # Se não encontrou nenhuma processada, usar a primeira mesmo
+            acao_id = acoes_result['data']['data'][0]['id']
+            print(f"   ⚠️  Usando processo não processado pelo NLP: {acao_id}")
+            return self.test_endpoint(f'/api/acoes/{acao_id}/resumo')
+        else:
+            print("   ⚠️  Nenhuma ação encontrada para teste de resumo")
+            return {'success': False, 'error': 'Nenhuma ação encontrada'}
+    
+    def test_resumos_batch(self):
+        """Testa resumos em lote"""
+        return self.test_endpoint('/api/acoes/resumos', params={
+            'page': 1, 
+            'per_page': 3
+        })
+    
+    def test_resumos_filtrados(self):
+        """Testa resumos filtrados por tribunal"""
+        return self.test_endpoint('/api/acoes/resumos', params={
+            'tribunal': 'TRT',
+            'page': 1,
+            'per_page': 2
+        })
+    
     def run_all_tests(self):
         """Executa todos os testes"""
         print("🚀 Iniciando testes da API...")
@@ -153,6 +192,9 @@ class APITester:
             ("Distribuição", self.test_stats_distribuicao),
             ("Timeline", self.test_stats_timeline),
             ("Qualidade NLP", self.test_stats_qualidade),
+            ("Resumo Rápido", self.test_resumo_rapido),
+            ("Resumos em Lote", self.test_resumos_batch),
+            ("Resumos Filtrados", self.test_resumos_filtrados),
         ]
         
         results = []

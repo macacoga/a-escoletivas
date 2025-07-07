@@ -22,6 +22,17 @@ class Entity:
     end: int
     confidence: float = 0.0
     description: str = ""
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Converte entidade para dicionário"""
+        return {
+            'text': self.text,
+            'label': self.label,
+            'start': self.start,
+            'end': self.end,
+            'confidence': self.confidence,
+            'description': self.description
+        }
 
 
 class EntityExtractor(LoggerMixin):
@@ -131,10 +142,10 @@ class EntityExtractor(LoggerMixin):
         """Adiciona patterns customizados ao pipeline"""
         try:
             # Criar entity ruler
-            if "entity_ruler" not in self.nlp.pipe_names:
+            if self.nlp and "entity_ruler" not in self.nlp.pipe_names:
                 ruler = self.nlp.add_pipe("entity_ruler", before="ner")
             else:
-                ruler = self.nlp.get_pipe("entity_ruler")
+                ruler = self.nlp.get_pipe("entity_ruler") if self.nlp else None
             
             # Adicionar patterns
             patterns = []
@@ -146,7 +157,8 @@ class EntityExtractor(LoggerMixin):
                         "pattern": [{"TEXT": {"REGEX": pattern}}]
                     })
             
-            ruler.add_patterns(patterns)
+            if ruler:
+                ruler.add_patterns(patterns)
             
             self.logger.info(f"Adicionados {len(patterns)} patterns customizados")
             

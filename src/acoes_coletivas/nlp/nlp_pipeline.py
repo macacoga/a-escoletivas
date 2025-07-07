@@ -11,6 +11,9 @@ from .text_preprocessor import TextPreprocessor
 from .entity_extractor import EntityExtractor, Entity
 from .rights_analyzer import RightsAnalyzer, WorkerRight
 from .extractive_summarizer import ExtractiveSummarizer
+from .parts_extractor import PartsExtractor
+from .legal_references_extractor import LegalReferencesExtractor
+from .structured_summarizer import StructuredSummarizer
 from ..utils.logging import LoggerMixin, log_execution_time
 from ..config.settings import settings
 
@@ -77,10 +80,13 @@ class NLPPipeline(LoggerMixin):
         self.entity_extractor = EntityExtractor()
         self.rights_analyzer = RightsAnalyzer()
         self.extractive_summarizer = ExtractiveSummarizer()
+        self.parts_extractor = PartsExtractor()
+        self.legal_references_extractor = LegalReferencesExtractor()
+        self.structured_summarizer = StructuredSummarizer()
         
         # Configurações
-        self.min_text_length = settings.nlp_min_text_length
-        self.max_text_length = settings.nlp_max_text_length
+        self.min_text_length = 100
+        self.max_text_length = 10000
         self.min_quality_score = 0.3
         
         self.logger.info("Pipeline NLP inicializado com sucesso")
@@ -384,7 +390,7 @@ class NLPPipeline(LoggerMixin):
             self.log_error(e, "create_analysis_report")
             return {}
     
-    def export_results_to_json(self, results: List[NLPResults], filepath: str = None) -> str:
+    def export_results_to_json(self, results: List[NLPResults], filepath: str = "data/nlp_results.json") -> str:
         """
         Exporta resultados para JSON
         
@@ -515,4 +521,171 @@ class NLPPipeline(LoggerMixin):
             failed_components = [comp for comp, status in validation_results.items() if not status]
             self.logger.error(f"Falha na validação dos componentes: {failed_components}")
         
-        return validation_results 
+        return validation_results
+    
+    @log_execution_time
+    def process_text_enhanced(self, 
+                             text: str, 
+                             processo_id: str,
+                             existing_parts: Optional[str] = None,
+                             existing_references: Optional[List[Dict]] = None) -> Dict[str, Any]:
+        """
+        Processa texto com recursos aprimorados (partes, referências, resumo estruturado)
+        
+        Args:
+            text: Texto da decisão judicial
+            processo_id: ID do processo
+            existing_parts: Partes já extraídas do processo
+            existing_references: Referências legislativas já extraídas
+            
+        Returns:
+            Resultados completos do processamento aprimorado
+        """
+        start_time = datetime.now()
+        
+        try:
+            # Validar entrada
+            if not text or not text.strip():
+                raise ValueError("Texto vazio ou nulo")
+            
+            if len(text) < self.min_text_length:
+                raise ValueError(f"Texto muito curto (min: {self.min_text_length} chars)")
+            
+            # Etapa 1: Pré-processamento
+            self.logger.info(f"Iniciando processamento aprimorado do processo {processo_id}")
+            processed_text = self.text_preprocessor.preprocess_text(
+                text,
+                remove_html=True,
+                clean_encoding=True,
+                normalize_spaces=True,
+                remove_headers_footers=True,
+                preserve_structure=True
+            )
+            
+            # Validar qualidade do texto
+            text_quality = self.text_preprocessor.validate_text_quality(processed_text)
+            
+            # Etapa 2: Extrair partes do processo
+            self.logger.info(f"Extraindo partes do processo {processo_id}")
+            parts_data = self.parts_extractor.extract_parts(processed_text)
+            
+            # Se há partes existentes, usar como fallback
+            if existing_parts and not parts_data.get('reclamante') and not parts_data.get('reclamado'):
+                parts_data['partes_text'] = existing_parts
+            
+            # Etapa 3: Extrair referências legislativas
+            self.logger.info(f"Extraindo referências legislativas do processo {processo_id}")
+            legal_refs = self.legal_references_extractor.extract_references(
+                processed_text, 
+                existing_references
+            )
+            
+            # Etapa 4: Criar resumo estruturado
+            self.logger.info(f"Criando resumo estruturado do processo {processo_id}")
+            structured_summary = self.structured_summarizer.create_structured_summary(
+                processed_text,
+                parts_data,
+                legal_refs
+            )
+            
+            # Etapa 5: Extrair entidades (mantido para compatibilidade)
+            entities = self.entity_extractor.extract_entities(processed_text)
+            
+            # Etapa 6: Analisar direitos trabalhistas (mantido para compatibilidade)
+            worker_rights = self.rights_analyzer.analyze_rights(processed_text)
+            
+            # Calcular tempo de processamento
+            processing_time = (datetime.now() - start_time).total_seconds()
+            
+            # Calcular score de confiança global aprimorado
+            confidence_score = self._calculate_enhanced_confidence(
+                text_quality, parts_data, legal_refs, structured_summary, entities, worker_rights
+            )
+            
+            # Criar resultado aprimorado
+            results = {
+                'processo_id': processo_id,
+                'text_quality': text_quality,
+                'parts_data': parts_data,
+                'legal_references': legal_refs,
+                'structured_summary': structured_summary.to_dict(),
+                'entities': [e.to_dict() for e in entities],
+                'worker_rights': [r.to_dict() for r in worker_rights],
+                'processing_time': processing_time,
+                'confidence_score': confidence_score,
+                'created_at': datetime.now().isoformat(),
+                
+                # Campos para compatibilidade com sistema existente
+                'resumo_extrativo': structured_summary.decisao_resumo,
+                'tema_principal': self._extract_main_theme(worker_rights),
+                'palavras_chave': self._extract_keywords(structured_summary),
+                'resultado_principal': structured_summary.resultado_principal,
+                'partes_formatadas': self.parts_extractor.format_parts_for_display(parts_data),
+                'referencias_formatadas': self.legal_references_extractor.format_references_for_display(legal_refs)
+            }
+            
+            self.log_operation(
+                "enhanced_processing_completed",
+                processo_id=processo_id,
+                has_parts=bool(parts_data.get('reclamante') or parts_data.get('reclamado')),
+                references_count=len(legal_refs.get('references', [])),
+                resultado=structured_summary.resultado_principal,
+                confidence=confidence_score
+            )
+            
+            return results
+            
+        except Exception as e:
+            self.log_error(e, "process_text_enhanced", processo_id=processo_id)
+            raise
+    
+    def _calculate_enhanced_confidence(self, text_quality: Dict, parts_data: Dict, 
+                                     legal_refs: Dict, structured_summary, 
+                                     entities: List, worker_rights: List) -> float:
+        """Calcula confiança aprimorada considerando todos os componentes"""
+        confidence = 0.0
+        
+        # Qualidade do texto (peso 20%)
+        confidence += text_quality.get('quality_score', 0.0) * 0.2
+        
+        # Extração de partes (peso 25%)
+        parts_conf = parts_data.get('extraction_confidence', 0.0)
+        confidence += parts_conf * 0.25
+        
+        # Referências legislativas (peso 15%)
+        refs_summary = legal_refs.get('summary', {})
+        refs_conf = min(refs_summary.get('average_confidence', 0.0), 1.0)
+        confidence += refs_conf * 0.15
+        
+        # Resumo estruturado (peso 30%)
+        summary_conf = structured_summary.confidence_score
+        confidence += summary_conf * 0.3
+        
+        # Entidades e direitos (peso 10%)
+        entities_conf = min(len(entities) / 10.0, 1.0)  # Máximo 10 entidades
+        rights_conf = min(len(worker_rights) / 5.0, 1.0)  # Máximo 5 direitos
+        confidence += (entities_conf + rights_conf) / 2 * 0.1
+        
+        return min(confidence, 1.0)
+    
+    def _extract_main_theme(self, worker_rights: List) -> str:
+        """Extrai tema principal baseado nos direitos identificados"""
+        if not worker_rights:
+            return "Não identificado"
+        
+        # Pegar o direito com maior confiança
+        main_right = max(worker_rights, key=lambda r: r.confidence)
+        return main_right.description
+    
+    def _extract_keywords(self, structured_summary) -> List[str]:
+        """Extrai palavras-chave do resumo estruturado"""
+        keywords = []
+        
+        # Adicionar pedidos como palavras-chave
+        keywords.extend(structured_summary.pedidos_principais)
+        
+        # Adicionar resultado como palavra-chave
+        if structured_summary.resultado_principal != "Resultado não identificado":
+            keywords.append(structured_summary.resultado_principal)
+        
+        return keywords[:10]  # Limitar a 10 palavras-chave 

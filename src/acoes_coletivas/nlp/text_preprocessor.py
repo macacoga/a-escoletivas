@@ -40,7 +40,7 @@ class TextPreprocessor(LoggerMixin):
             'headers_footers': re.compile(r'(PODER JUDICIÁRIO|JUSTIÇA DO TRABALHO|TRIBUNAL|VARA|JUIZ|PÁGINA \d+|FLS\. \d+)', re.IGNORECASE),
             
             # Caracteres especiais repetidos
-            'special_chars': re.compile(r'[^\w\s\.,;:!?()[\]{}""''""\-]'),
+            'special_chars': re.compile(r'[^\w\s\.,;:!?()[\]{}""''""-]', re.UNICODE),
             
             # Linhas com apenas números ou caracteres especiais
             'useless_lines': re.compile(r'^[\d\s\-_=*#\.]+$'),
@@ -137,12 +137,21 @@ class TextPreprocessor(LoggerMixin):
     def _remove_html_tags(self, text: str) -> str:
         """Remove tags HTML e converte para texto plano"""
         try:
-            # Usar BeautifulSoup para remover HTML
+            # Detectar se é HTML complexo
+            if self._is_complex_html(text):
+                self.logger.info("HTML complexo detectado, aplicando limpeza avançada")
+                return self._clean_complex_html(text)
+            
+            # Usar BeautifulSoup para HTML simples
             soup = BeautifulSoup(text, 'html.parser')
             
             # Remover scripts e styles
             for script in soup(["script", "style"]):
                 script.decompose()
+            
+            # Remover elementos problemáticos
+            for element in soup(["img", "svg", "canvas", "video", "audio"]):
+                element.decompose()
             
             # Extrair texto
             text_content = soup.get_text()
@@ -157,6 +166,68 @@ class TextPreprocessor(LoggerMixin):
             self.log_error(e, "_remove_html_tags")
             # Fallback: usar bleach para remover tags
             return bleach.clean(text, tags=[], strip=True)
+    
+    def _is_complex_html(self, text: str) -> bool:
+        """Detecta se o texto contém HTML complexo ou problemático"""
+        try:
+            # Verificar indicadores de HTML complexo
+            complex_indicators = [
+                'data:image',  # Imagens base64
+                'base64,',     # Dados base64
+                '<style>',     # CSS inline
+                'cellspacing', # Tabelas complexas
+                'cellpadding',
+                '@media',      # CSS media queries
+                'font-family', # Estilos CSS
+                'background-color',
+                'text-align'
+            ]
+            
+            text_lower = text.lower()
+            complex_count = sum(1 for indicator in complex_indicators if indicator in text_lower)
+            
+            # Se tem muitos indicadores, é complexo
+            return complex_count >= 3
+            
+        except Exception:
+            return False
+    
+    def _clean_complex_html(self, text: str) -> str:
+        """Limpeza avançada para HTML complexo"""
+        try:
+            # Método simplificado que funciona
+            
+            # 1. Remover imagens base64 (são muito grandes e inúteis)
+            text = re.sub(r'data:image/[^;]+;base64,[A-Za-z0-9+/=]+', '', text)
+            
+            # 2. Remover outros dados base64
+            text = re.sub(r'data:[^;]+;base64,[A-Za-z0-9+/=]+', '', text)
+            
+            # 3. Remover blocos de CSS e scripts
+            text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL | re.IGNORECASE)
+            text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.DOTALL | re.IGNORECASE)
+            
+            # 4. Remover todas as tags HTML de uma vez (método que funcionou)
+            text = re.sub(r'<[^>]+>', ' ', text)
+            
+            # 5. Normalizar espaços
+            text = re.sub(r'\s+', ' ', text)
+            
+            # 6. Verificar se sobrou texto útil
+            clean_text = text.strip()
+            
+            if len(clean_text) < 50:
+                self.logger.warning("Texto muito pequeno após limpeza")
+                return ""
+            
+            return clean_text
+            
+        except Exception as e:
+            self.log_error(e, "_clean_complex_html")
+            # Fallback: limpeza básica que sabemos que funciona
+            fallback_text = re.sub(r'data:image/[^;]+;base64,[A-Za-z0-9+/=]+', '', text)
+            fallback_text = re.sub(r'<[^>]+>', ' ', fallback_text)
+            return re.sub(r'\s+', ' ', fallback_text).strip()
     
     def _clean_encoding(self, text: str) -> str:
         """Limpa problemas de encoding"""
@@ -198,8 +269,12 @@ class TextPreprocessor(LoggerMixin):
             return text
     
     def _remove_headers_footers(self, text: str) -> str:
-        """Remove cabeçalhos e rodapés comuns"""
+        """Remove cabeçalhos e rodapés comuns (versão menos agressiva)"""
         try:
+            # Se o texto não tem quebras de linha (foi processado pelo HTML), não remover nada
+            if '\n' not in text:
+                return text
+            
             lines = text.split('\n')
             cleaned_lines = []
             
@@ -210,25 +285,33 @@ class TextPreprocessor(LoggerMixin):
                 if not line:
                     continue
                 
-                # Pular linhas com apenas números/caracteres especiais
-                if self.patterns['useless_lines'].match(line):
+                # Pular linhas com apenas números/caracteres especiais (mais específico)
+                if len(line) <= 5 and self.patterns['useless_lines'].match(line):
                     continue
                 
-                # Pular cabeçalhos/rodapés conhecidos
-                if self.patterns['headers_footers'].search(line):
+                # Pular apenas cabeçalhos muito específicos (linhas isoladas)
+                if len(line) < 50 and self.patterns['headers_footers'].search(line):
+                    # Verificar se é uma linha isolada de cabeçalho
+                    if any(term in line.upper() for term in ['PÁGINA', 'FLS.', 'FOLHA']):
+                        continue
+                
+                # Pular linhas muito curtas apenas se forem suspeitas
+                if len(line) < 5:
                     continue
                 
-                # Pular linhas muito curtas (provavelmente fragmentos)
-                if len(line) < 10:
-                    continue
-                
-                # Pular linhas com texto em maiúsculas excessivo
-                if len(self.patterns['excessive_caps'].findall(line)) > 2:
+                # Pular linhas com APENAS texto em maiúsculas e muito curtas
+                if len(line) < 30 and line.isupper() and not any(term in line for term in ['PROCESSO', 'RECURSO', 'DECISÃO']):
                     continue
                 
                 cleaned_lines.append(line)
             
-            return '\n'.join(cleaned_lines)
+            # Se removeu muito texto, retornar original
+            result = '\n'.join(cleaned_lines)
+            if len(result) < len(text) * 0.5:  # Se removeu mais de 50%, algo deu errado
+                self.logger.warning("Remoção de headers/footers muito agressiva, retornando texto original")
+                return text
+            
+            return result
             
         except Exception as e:
             self.log_error(e, "_remove_headers_footers")
@@ -331,8 +414,26 @@ class TextPreprocessor(LoggerMixin):
                 issues.append('text_too_short')
                 score -= 0.3
             
+            # Verificar se ainda há HTML residual
+            html_tags = re.findall(r'<[^>]+>', text)
+            if html_tags:
+                issues.append('html_tags_remaining')
+                score -= 0.4
+            
+            # Verificar se há dados base64 residuais
+            if 'base64,' in text:
+                issues.append('base64_data_remaining')
+                score -= 0.5
+            
+            # Verificar se há CSS residual
+            css_indicators = ['font-family', 'background-color', 'text-align', '@media']
+            css_count = sum(1 for indicator in css_indicators if indicator in text.lower())
+            if css_count > 0:
+                issues.append('css_remnants')
+                score -= 0.3
+            
             # Verificar se há muitos caracteres especiais
-            special_char_ratio = len(re.findall(r'[^\w\s]', text)) / len(text) if text else 0
+            special_char_ratio = len(re.findall(r'[^\w\s\.,;:!?()[\]{}""''""-]', text)) / len(text) if text else 0
             if special_char_ratio > 0.3:
                 issues.append('too_many_special_chars')
                 score -= 0.2
@@ -344,10 +445,17 @@ class TextPreprocessor(LoggerMixin):
                 if avg_word_length > 15:
                     issues.append('words_too_long')
                     score -= 0.2
+                
+                # Verificar se há muitas "palavras" que são na verdade códigos
+                code_words = [word for word in words if len(word) > 20 and not any(c.isalpha() for c in word)]
+                if len(code_words) > len(words) * 0.1:  # Mais de 10% são códigos
+                    issues.append('too_many_code_words')
+                    score -= 0.3
             
             # Verificar se há estrutura de sentenças
             sentences = re.split(r'[.!?]+', text)
-            if len(sentences) < 3:
+            valid_sentences = [s for s in sentences if len(s.strip()) > 10]
+            if len(valid_sentences) < 3:
                 issues.append('too_few_sentences')
                 score -= 0.2
             
@@ -357,19 +465,44 @@ class TextPreprocessor(LoggerMixin):
                 if term.lower() in text.lower():
                     legal_terms_found += 1
             
-            if legal_terms_found == 0:
-                issues.append('no_legal_terms')
-                score -= 0.1
+            # Verificar presença de termos trabalhistas
+            worker_terms_found = 0
+            for term in self.preserve_terms['worker_rights']:
+                if term.lower() in text.lower():
+                    worker_terms_found += 1
             
-            quality_score = max(0.0, score)
+            # Bonificar presença de termos relevantes
+            if legal_terms_found > 0:
+                score += 0.1
+            if worker_terms_found > 0:
+                score += 0.1
+            
+            # Se não tem nenhum termo relevante, é suspeito
+            if legal_terms_found == 0 and worker_terms_found == 0:
+                issues.append('no_legal_terms')
+                score -= 0.2
+            
+            # Verificar ratio de texto útil vs lixo
+            useful_chars = len(re.findall(r'[a-zA-ZáéíóúâêîôûàèìòùãõçÁÉÍÓÚÂÊÎÔÛÀÈÌÒÙÃÕÇ\s\.,;:!?()[\]{}""''""-]', text))
+            useful_ratio = useful_chars / len(text) if text else 0
+            if useful_ratio < 0.7:
+                issues.append('low_useful_text_ratio')
+                score -= 0.3
+            
+            quality_score = max(0.0, min(1.0, score))
             
             return {
                 'quality_score': quality_score,
                 'issues': issues,
                 'legal_terms_found': legal_terms_found,
+                'worker_terms_found': worker_terms_found,
                 'word_count': len(words) if words else 0,
-                'sentence_count': len(sentences),
-                'special_char_ratio': special_char_ratio
+                'sentence_count': len(valid_sentences),
+                'special_char_ratio': special_char_ratio,
+                'useful_text_ratio': useful_ratio,
+                'html_tags_count': len(html_tags),
+                'has_base64': 'base64,' in text,
+                'css_indicators': css_count
             }
             
         except Exception as e:

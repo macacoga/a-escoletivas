@@ -91,7 +91,7 @@ class ExtractiveSummarizer(LoggerMixin):
     @log_execution_time
     def create_summary(self, 
                       text: str,
-                      max_sentences: int = None,
+                      max_sentences: int = 10,
                       method: str = 'textrank',
                       include_context: bool = True) -> Dict[str, Any]:
         """
@@ -110,9 +110,6 @@ class ExtractiveSummarizer(LoggerMixin):
             return self._empty_summary("Texto muito curto para sumarização")
         
         try:
-            if max_sentences is None:
-                max_sentences = settings.nlp_sentence_count
-            
             # Pré-processar texto
             processed_text = self._preprocess_for_summary(text)
             

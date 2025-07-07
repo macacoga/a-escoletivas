@@ -57,12 +57,46 @@ class Settings(BaseSettings):
     )
     
     # Configurações de retry
-    max_retries: int = Field(default=3, alias="MAX_RETRIES")
-    retry_delay: float = Field(default=5.0, alias="RETRY_DELAY")
+    max_retries: int = Field(default=3, description="Número máximo de tentativas")
+    retry_delay: float = Field(default=2.0, description="Delay entre tentativas")
+    
+    # Configurações da API Flask
+    flask_env: str = Field(default="production", alias="FLASK_ENV")
+    host: str = Field(default="0.0.0.0", alias="HOST")
+    port: int = Field(default=5000, alias="PORT")
+    secret_key: str = Field(default="dev-secret-key-change-in-production", alias="SECRET_KEY")
+    
+    # Configurações de CORS
+    cors_origins: str = Field(default="*", alias="CORS_ORIGINS")
+    
+    # Configurações de cache
+    redis_url: str = Field(default="", alias="REDIS_URL")
+    
+    # Configurações de documentação
+    api_docs_enabled: bool = Field(default=True, alias="API_DOCS_ENABLED")
+    api_docs_path: str = Field(default="/api/docs/", alias="API_DOCS_PATH")
+    
+    # Configurações de performance
+    max_content_length: int = Field(default=16777216, alias="MAX_CONTENT_LENGTH")
+    threads: int = Field(default=6, alias="THREADS")
+    
+    # Configurações de logging adicional
+    log_json_format: bool = Field(default=True, alias="LOG_JSON_FORMAT")
+    
+    # Configurações do Scraper
+    scraper_headless: bool = Field(default=True, description="Executar Chrome em modo headless")
+    scraper_timeout: int = Field(default=30, description="Timeout para operações do Selenium")
+    scraper_delay: float = Field(default=1.5, description="Delay entre requisições")
+    
+    # URLs da Jurisprudência do Trabalho
+    jurisprudencia_base_url: str = Field(default="https://jurisprudencia.jt.jus.br", description="URL base da jurisprudência")
+    jurisprudencia_search_url: str = Field(default="https://jurisprudencia.jt.jus.br/pesquisa", description="URL de pesquisa")
+    jurisprudencia_api_url: str = Field(default="https://jurisprudencia.jt.jus.br/jurisprudencia-nacional-backend/api/no-auth/pesquisa", description="URL da API")
     
     class Config:
         env_file = ".env"
         case_sensitive = False
+        extra = "allow"  # Permite campos extras
         
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

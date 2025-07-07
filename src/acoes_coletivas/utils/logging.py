@@ -20,22 +20,24 @@ def setup_logging(
     
     Args:
         level: Nível de log (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        log_file: Caminho para o arquivo de log
+        log_file: Caminho para o arquivo de log (None para apenas console)
         json_format: Se True, usa formato JSON para logs
     """
     
-    # Criar diretório de logs se não existir
-    log_path = Path(log_file)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
+    # Configurar handlers baseado no log_file
+    handlers = [logging.StreamHandler(sys.stdout)]
+    
+    if log_file is not None:
+        # Criar diretório de logs se não existir
+        log_path = Path(log_file)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        handlers.append(logging.FileHandler(log_file, encoding='utf-8'))
     
     # Configurar o logging padrão do Python
     logging.basicConfig(
         level=getattr(logging, level.upper()),
         format="%(message)s",
-        handlers=[
-            logging.FileHandler(log_file, encoding='utf-8'),
-            logging.StreamHandler(sys.stdout)
-        ]
+        handlers=handlers
     )
     
     # Configurar structlog

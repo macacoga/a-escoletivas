@@ -5,7 +5,7 @@ Endpoints da API para ações coletivas
 from flask import request, jsonify
 from flask_restx import Namespace, Resource, fields
 from marshmallow import ValidationError
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, cast
 import math
 from datetime import datetime
 from sqlalchemy import text, or_, and_, func
@@ -329,6 +329,13 @@ class AcoesSearchResource(Resource):
             except ValidationError as e:
                 acoes_ns.abort(400, f"Parâmetros inválidos: {e.messages}")
             
+            # Garantir que filters é um dicionário
+            if not isinstance(filters, dict):
+                acoes_ns.abort(400, "Erro na validação dos parâmetros")
+            
+            # Use cast to help the linter
+            filters = cast(Dict[str, Any], filters)
+            
             logger.info(f"Buscando ações com filtros: {filters}")
             
             # Obter banco de dados
@@ -504,4 +511,315 @@ class AcoesSearchResource(Resource):
             
         except Exception as e:
             logger.error(f"Erro na busca: {e}")
+            acoes_ns.abort(500, f"Erro interno: {str(e)}")
+
+
+# Modelo para resumo rápido
+resumo_rapido_model = acoes_ns.model('ResumoRapido', {
+    'processo': fields.String(required=True, description='Número do processo'),
+    'tribunal': fields.String(required=True, description='Tribunal'),
+    'tipo_documento': fields.String(description='Tipo do documento'),
+    'resumo_rapido': fields.String(required=True, description='Resumo em texto corrido'),
+    'resultado_principal': fields.String(description='Resultado principal da decisão'),
+    'principais_direitos': fields.List(fields.String, description='Principais direitos identificados'),
+    'valor_total': fields.String(description='Valor total identificado'),
+    'qualidade_analise': fields.String(description='Qualidade da análise (Alta/Média/Baixa)'),
+    'confianca_percentual': fields.String(description='Confiança da análise em percentual'),
+    'data_julgamento': fields.String(description='Data do julgamento'),
+    'relator': fields.String(description='Relator da decisão'),
+    'partes_resumo': fields.String(description='Resumo das partes envolvidas')
+})
+
+
+@acoes_ns.route('/<int:processo_id>/resumo')
+class AcaoResumoResource(Resource):
+    """Obter resumo rápido e inteligente de uma ação específica"""
+    
+    @acoes_ns.doc('obter_resumo_rapido')
+    @acoes_ns.marshal_with(resumo_rapido_model)
+    def get(self, processo_id: int):
+        """Gerar resumo rápido e inteligente de uma ação coletiva"""
+        try:
+            logger.info(f"Gerando resumo rápido para processo {processo_id}")
+            
+            # Obter banco de dados
+            db = get_database()
+            
+            # Buscar processo e dados NLP
+            query = """
+                SELECT p.numero_processo, p.tribunal, p.tipo_documento, p.data_julgamento,
+                       p.relator, p.partes, p.conteudo_bruto_decisao,
+                       r.resumo_extrativo, r.tema_principal, r.qualidade_texto, 
+                       r.confianca_global, r.palavras_chave, r.entidades_nomeadas,
+                       r.direitos_trabalhistas, r.valores_monetarios
+                FROM processos_judiciais p
+                LEFT JOIN resultados_nlp r ON p.id = r.processo_id
+                WHERE p.id = ?
+            """
+            
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(query, (processo_id,))
+                row = cursor.fetchone()
+                
+                if not row:
+                    acoes_ns.abort(404, f"Processo {processo_id} não encontrado")
+            
+            # Extrair dados
+            numero_processo = row[0]
+            tribunal = row[1]
+            tipo_documento = row[2]
+            data_julgamento = row[3]
+            relator = row[4]
+            partes = row[5]
+            conteudo_bruto = row[6]
+            resumo_extrativo = row[7]
+            tema_principal = row[8]
+            qualidade_texto = row[9]
+            confianca_global = row[10]
+            palavras_chave = row[11]
+            entidades_nomeadas = row[12]
+            direitos_trabalhistas = row[13]
+            valores_monetarios = row[14]
+            
+            # Gerar resumo inteligente
+            resumo_parts = []
+            
+            # Cabeçalho básico
+            resumo_parts.append(f"Processo {numero_processo} ({tribunal})")
+            
+            if tipo_documento:
+                resumo_parts.append(f"- {tipo_documento}")
+            
+            # Tema principal ou assunto
+            if tema_principal and tema_principal != "Não identificado":
+                resumo_parts.append(f"sobre {tema_principal}")
+            elif resumo_extrativo:
+                # Extrair primeira frase do resumo como tema
+                primeira_frase = resumo_extrativo.split('.')[0][:100] + "..."
+                resumo_parts.append(f"versando sobre {primeira_frase}")
+            
+            # Analisar resultado da decisão usando o analisador inteligente
+            from ...nlp.resultado_analyzer import ResultadoAnalyzer
+            
+            analyzer = ResultadoAnalyzer()
+            resultado_analise = analyzer.analisar_resultado(resumo_extrativo, direitos_trabalhistas)
+            resultado_principal = resultado_analise.resultado_principal
+            
+            resumo_parts.append(f". **RESULTADO: {resultado_principal}**")
+            
+            # Direitos principais
+            principais_direitos = []
+            if direitos_trabalhistas:
+                import json
+                try:
+                    direitos_data = json.loads(direitos_trabalhistas)
+                    if isinstance(direitos_data, list):
+                        for direito in direitos_data[:3]:  # Máximo 3 direitos
+                            if isinstance(direito, dict) and 'description' in direito:
+                                principais_direitos.append(direito['description'])
+                except:
+                    pass
+            
+            if principais_direitos:
+                resumo_parts.append(f" Direitos envolvidos: {', '.join(principais_direitos)}")
+            
+            # Valores monetários
+            valor_total = "Valor não especificado"
+            if valores_monetarios:
+                try:
+                    valores_data = json.loads(valores_monetarios)
+                    if isinstance(valores_data, list) and valores_data:
+                        # Pegar o primeiro valor encontrado
+                        primeiro_valor = valores_data[0]
+                        if isinstance(primeiro_valor, dict) and 'text' in primeiro_valor:
+                            valor_total = primeiro_valor['text']
+                        elif len(valores_data) > 1:
+                            valor_total = f"{primeiro_valor['text']} (entre outros)"
+                except:
+                    pass
+            
+            if valor_total != "Valor não especificado":
+                resumo_parts.append(f". Valor: {valor_total}")
+            
+            # Informações complementares
+            if data_julgamento:
+                resumo_parts.append(f". Julgado em {data_julgamento}")
+            
+            if relator:
+                resumo_parts.append(f". Relator: {relator}")
+            
+            # Qualidade da análise
+            qualidade_analise = "Baixa"
+            if qualidade_texto:
+                if qualidade_texto >= 0.7:
+                    qualidade_analise = "Alta"
+                elif qualidade_texto >= 0.5:
+                    qualidade_analise = "Média"
+            
+            # Confiança em percentual
+            confianca_percentual = "Não disponível"
+            if confianca_global:
+                confianca_percentual = f"{int(confianca_global * 100)}%"
+            
+            # Resumo das partes
+            partes_resumo = "Partes não identificadas"
+            if partes:
+                # Simplificar nomes das partes
+                partes_clean = partes.replace('\n', ' ').replace('\r', ' ')
+                if len(partes_clean) > 100:
+                    partes_resumo = partes_clean[:100] + "..."
+                else:
+                    partes_resumo = partes_clean
+            
+            # Montar resumo final
+            resumo_final = ''.join(resumo_parts)
+            
+            # Adicionar contexto do resumo extrativo se disponível
+            if resumo_extrativo and len(resumo_extrativo) > 50:
+                resumo_final += f"\n\nResumo da decisão: {resumo_extrativo[:300]}..."
+            
+            response_data = {
+                'processo': numero_processo,
+                'tribunal': tribunal,
+                'tipo_documento': tipo_documento,
+                'resumo_rapido': resumo_final,
+                'resultado_principal': resultado_principal,
+                'principais_direitos': principais_direitos,
+                'valor_total': valor_total,
+                'qualidade_analise': qualidade_analise,
+                'confianca_percentual': confianca_percentual,
+                'data_julgamento': data_julgamento,
+                'relator': relator,
+                'partes_resumo': partes_resumo
+            }
+            
+            logger.info(f"Resumo rápido gerado para processo {processo_id}")
+            return response_data
+            
+        except Exception as e:
+            logger.error(f"Erro ao gerar resumo rápido: {e}")
+            acoes_ns.abort(500, f"Erro interno: {str(e)}")
+
+
+@acoes_ns.route('/resumos')
+class AcoesResumosBatchResource(Resource):
+    """Obter resumos rápidos de múltiplas ações"""
+    
+    @acoes_ns.doc('obter_resumos_batch')
+    @acoes_ns.expect(acoes_ns.parser()
+                    .add_argument('page', type=int, default=1, help='Página')
+                    .add_argument('per_page', type=int, default=10, help='Itens por página (max: 20)')
+                    .add_argument('tribunal', type=str, help='Filtrar por tribunal')
+                    .add_argument('tema', type=str, help='Filtrar por tema'))
+    def get(self):
+        """Obter resumos rápidos de múltiplas ações com paginação"""
+        try:
+            # Parâmetros
+            page = request.args.get('page', 1, type=int)
+            per_page = min(request.args.get('per_page', 10, type=int), 20)
+            tribunal = request.args.get('tribunal')
+            tema = request.args.get('tema')
+            
+            logger.info(f"Gerando resumos em lote - página {page}")
+            
+            # Obter banco de dados
+            db = get_database()
+            
+            # Construir filtros
+            where_conditions = ["r.resumo_extrativo IS NOT NULL"]
+            params = []
+            
+            if tribunal:
+                where_conditions.append("p.tribunal LIKE ?")
+                params.append(f"%{tribunal}%")
+            
+            if tema:
+                where_conditions.append("r.tema_principal LIKE ?")
+                params.append(f"%{tema}%")
+            
+            where_clause = "WHERE " + " AND ".join(where_conditions)
+            
+            # Paginação
+            offset = (page - 1) * per_page
+            
+            # Query
+            query = f"""
+                SELECT p.id, p.numero_processo, p.tribunal, p.tipo_documento,
+                       r.tema_principal, r.qualidade_texto, r.confianca_global
+                FROM processos_judiciais p
+                INNER JOIN resultados_nlp r ON p.id = r.processo_id
+                {where_clause}
+                ORDER BY p.data_coleta DESC
+                LIMIT {per_page} OFFSET {offset}
+            """
+            
+            # Contar total
+            count_query = f"""
+                SELECT COUNT(*)
+                FROM processos_judiciais p
+                INNER JOIN resultados_nlp r ON p.id = r.processo_id
+                {where_clause}
+            """
+            
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Buscar processos
+                cursor.execute(query, params)
+                rows = cursor.fetchall()
+                
+                # Contar total
+                cursor.execute(count_query, params)
+                total = cursor.fetchone()[0]
+            
+            # Gerar resumos para cada processo
+            resumos = []
+            for row in rows:
+                processo_id = row[0]
+                numero_processo = row[1]
+                tribunal = row[2]
+                tipo_documento = row[3]
+                tema_principal = row[4]
+                qualidade_texto = row[5]
+                confianca_global = row[6]
+                
+                # Resumo simplificado para lote
+                qualidade = "Alta" if qualidade_texto and qualidade_texto >= 0.7 else "Média" if qualidade_texto and qualidade_texto >= 0.5 else "Baixa"
+                confianca = f"{int(confianca_global * 100)}%" if confianca_global else "N/A"
+                
+                resumo_simples = {
+                    'id': processo_id,
+                    'processo': numero_processo,
+                    'tribunal': tribunal,
+                    'tipo_documento': tipo_documento,
+                    'tema_principal': tema_principal or "Não identificado",
+                    'qualidade_analise': qualidade,
+                    'confianca_percentual': confianca,
+                    'link_resumo_completo': f"/api/acoes/{processo_id}/resumo"
+                }
+                
+                resumos.append(resumo_simples)
+            
+            # Metadados de paginação
+            total_pages = math.ceil(total / per_page)
+            
+            response_data = {
+                'data': resumos,
+                'pagination': {
+                    'page': page,
+                    'per_page': per_page,
+                    'total': total,
+                    'pages': total_pages,
+                    'has_next': page < total_pages,
+                    'has_prev': page > 1
+                },
+                'total_found': total
+            }
+            
+            logger.info(f"Gerados {len(resumos)} resumos em lote")
+            return response_data
+            
+        except Exception as e:
+            logger.error(f"Erro ao gerar resumos em lote: {e}")
             acoes_ns.abort(500, f"Erro interno: {str(e)}") 
