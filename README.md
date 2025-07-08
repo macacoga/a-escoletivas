@@ -32,12 +32,15 @@ src/acoes_coletivas/
 - [x] Configuração centralizada
 - [x] Tratamento de erros robusto
 
-### Fase 2: Processamento NLP (Em desenvolvimento)
-- [ ] Sumarização automática de textos
-- [ ] Extração de palavras-chave
-- [ ] Classificação de temas
-- [ ] Análise de sentimentos
-- [ ] Identificação de entidades nomeadas
+### Fase 2: Processamento NLP ✅ (v2.0.0 - Aprimorado)
+- [x] Sumarização automática de textos (estruturada)
+- [x] Extração de palavras-chave
+- [x] Classificação de temas
+- [x] Identificação de entidades nomeadas
+- [x] **Extração de partes do processo** (reclamante/reclamado)
+- [x] **Extração de referências legislativas**
+- [x] **Análise de valores monetários**
+- [x] **Score de confiança aprimorado**
 
 ### Fase 3: Interface e Visualização (Planejado)
 - [ ] Interface web com Flask
@@ -139,6 +142,32 @@ print(f"Total de processos: {stats['total_processos']}")
 print(f"Processos processados: {stats['processos_processados']}")
 ```
 
+### Processamento NLP Aprimorado
+
+```python
+from src.acoes_coletivas.nlp.nlp_pipeline import NLPPipeline
+
+# Inicializar pipeline NLP aprimorado
+pipeline = NLPPipeline()
+
+# Validar componentes
+validation = pipeline.validate_pipeline()
+if validation['pipeline_valid']:
+    print("✅ Pipeline aprimorado pronto para uso!")
+    
+    # Processar texto com recursos avançados
+    resultado = pipeline.process_text_enhanced(
+        texto="Texto da decisão judicial...",
+        processo_id="123",
+        existing_parts="João Silva vs Empresa XYZ",
+        existing_references=[{"text": "art. 458 CLT", "type": "law"}]
+    )
+    
+    print(f"Partes extraídas: {resultado['parts_data']}")
+    print(f"Referências: {resultado['legal_references']}")
+    print(f"Resumo estruturado: {resultado['structured_summary']}")
+```
+
 ### Coleta de Dados
 
 ```python
@@ -158,6 +187,27 @@ if scraper.initialize_session():
     for doc in documents:
         processo = ProcessoJudicial.from_dict(doc)
         db.insert_processo(processo)
+```
+
+### Comandos CLI
+
+O sistema oferece uma interface de linha de comando completa:
+
+```bash
+# Estatísticas gerais
+python acoes_coletivas.py stats
+
+# Importar processos do Excel
+python acoes_coletivas.py import -f dados.xlsx -c numero_processo
+
+# Processamento NLP aprimorado
+python acoes_coletivas.py nlp validate          # Validar pipeline
+python acoes_coletivas.py nlp process --limit 50  # Processar 50 textos
+python acoes_coletivas.py nlp stats             # Estatísticas NLP
+python acoes_coletivas.py nlp export -o resultados.json  # Exportar dados
+
+# Coleta de dados
+python acoes_coletivas.py scrape --limit 100
 ```
 
 ## 📊 Estrutura do Banco de Dados

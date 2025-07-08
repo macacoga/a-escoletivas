@@ -193,16 +193,16 @@ def export_data(db: DatabaseManager, output_file: str):
 
 
 def process_nlp(db: DatabaseManager, process_id: Optional[int] = None, process_ids: Optional[List[int]] = None, limit: int = 10):
-    """Processa textos através do pipeline NLP"""
+    """Processa textos através do pipeline NLP aprimorado"""
     logger = get_logger("CLI")
     
     try:
         # Inicializar pipeline
-        print("Inicializando pipeline NLP...")
+        print("🤖 Inicializando pipeline NLP aprimorado...")
         pipeline = NLPPipeline()
         
         # Validar pipeline
-        print("Validando componentes do pipeline...")
+        print("🔍 Validando componentes do pipeline aprimorado...")
         validation = pipeline.validate_pipeline()
         
         if not validation['pipeline_valid']:
@@ -211,7 +211,14 @@ def process_nlp(db: DatabaseManager, process_id: Optional[int] = None, process_i
             print(f"Componentes com falha: {failed_components}")
             return
         
-        print("✅ Pipeline NLP validado com sucesso!")
+        print("✅ Pipeline NLP aprimorado validado com sucesso!")
+        print("🚀 Recursos disponíveis:")
+        print("   • Extração de entidades nomeadas")
+        print("   • Análise de direitos trabalhistas")
+        print("   • Extração de partes do processo")
+        print("   • Extração de referências legislativas")
+        print("   • Resumo estruturado")
+        print("   • Análise de valores monetários")
         
         if process_ids:
             # Processar múltiplos processos específicos
@@ -275,35 +282,41 @@ def process_nlp(db: DatabaseManager, process_id: Optional[int] = None, process_i
 
 
 def show_nlp_stats(db: DatabaseManager):
-    """Exibe estatísticas detalhadas de NLP"""
+    """Exibe estatísticas detalhadas de NLP aprimorado"""
     logger = get_logger("CLI")
     
     try:
         stats = db.get_nlp_stats()
         
-        print("\n" + "="*50)
-        print("ESTATÍSTICAS DETALHADAS DE NLP")
-        print("="*50)
-        print(f"Total de processos: {stats.get('total_processos', 0)}")
-        print(f"Processos com NLP: {stats.get('processos_com_nlp', 0)}")
-        print(f"Taxa de cobertura: {stats.get('taxa_cobertura', 0):.1f}%")
-        print(f"Qualidade média: {stats.get('qualidade_media', 0):.3f}")
-        print(f"Confiança média: {stats.get('confianca_media', 0):.3f}")
-        print(f"Tempo médio: {stats.get('tempo_medio', 0):.2f}s")
+        print("\n" + "="*60)
+        print("ESTATÍSTICAS DETALHADAS DE NLP APRIMORADO")
+        print("="*60)
+        print(f"📊 Total de processos: {stats.get('total_processos', 0)}")
+        print(f"🤖 Processos com NLP: {stats.get('processos_com_nlp', 0)}")
+        print(f"📈 Taxa de cobertura: {stats.get('taxa_cobertura', 0):.1f}%")
+        print(f"🎯 Qualidade média: {stats.get('qualidade_media', 0):.3f}")
+        print(f"✅ Confiança média: {stats.get('confianca_media', 0):.3f}")
+        print(f"⏱️ Tempo médio: {stats.get('tempo_medio', 0):.2f}s")
+        
+        # Métodos de sumarização
+        if 'metodos_sumarizacao' in stats and stats['metodos_sumarizacao']:
+            print(f"\n📝 Métodos de sumarização:")
+            for metodo, count in stats['metodos_sumarizacao'].items():
+                print(f"  • {metodo}: {count}")
         
         # Temas mais comuns
         if 'temas_comuns' in stats and stats['temas_comuns']:
-            print(f"\nTemas mais comuns:")
+            print(f"\n🏷️ Temas mais comuns:")
             for tema, count in stats['temas_comuns'][:5]:
                 print(f"  • {tema}: {count}")
         
         # Tribunais
         if 'tribunais_distribuicao' in stats and stats['tribunais_distribuicao']:
-            print(f"\nDistribuição por tribunal:")
+            print(f"\n⚖️ Distribuição por tribunal:")
             for tribunal, count in stats['tribunais_distribuicao'][:5]:
                 print(f"  • {tribunal}: {count}")
         
-        print("="*50)
+        print("="*60)
         
     except Exception as e:
         logger.error(f"Erro ao obter estatísticas NLP: {e}")
@@ -324,23 +337,39 @@ def export_nlp_results(db: DatabaseManager, output_file: str):
 
 
 def validate_nlp_pipeline():
-    """Valida o pipeline NLP"""
+    """Valida o pipeline NLP aprimorado"""
     logger = get_logger("CLI")
     
     try:
-        print("Validando pipeline NLP...")
+        print("🔍 Validando pipeline NLP aprimorado...")
         pipeline = NLPPipeline()
         
         validation = pipeline.validate_pipeline()
         
         print("\n" + "="*50)
-        print("VALIDAÇÃO DO PIPELINE NLP")
+        print("VALIDAÇÃO DO PIPELINE NLP APRIMORADO")
         print("="*50)
         
-        for component, status in validation.items():
+        # Componentes básicos
+        print("📋 COMPONENTES BÁSICOS:")
+        basic_components = ['text_preprocessor', 'entity_extractor', 'rights_analyzer', 'extractive_summarizer']
+        for component in basic_components:
+            status = validation.get(component, False)
             status_icon = "✅" if status else "❌"
-            print(f"{status_icon} {component}: {'OK' if status else 'FALHA'}")
+            print(f"  {status_icon} {component}: {'OK' if status else 'FALHA'}")
         
+        # Componentes aprimorados
+        print("\n🚀 COMPONENTES APRIMORADOS:")
+        enhanced_components = ['parts_extractor', 'legal_references_extractor', 'structured_summarizer']
+        for component in enhanced_components:
+            status = validation.get(component, False)
+            status_icon = "✅" if status else "❌"
+            print(f"  {status_icon} {component}: {'OK' if status else 'FALHA'}")
+        
+        print("\n" + "="*50)
+        overall_status = validation.get('pipeline_valid', False)
+        status_icon = "✅" if overall_status else "❌"
+        print(f"{status_icon} STATUS GERAL: {'VÁLIDO' if overall_status else 'INVÁLIDO'}")
         print("="*50)
         
     except Exception as e:
@@ -727,16 +756,16 @@ Exemplos de uso:
   %(prog)s export -o resultado.xlsx       # Exporta dados para Excel
   %(prog)s init                           # Inicializa banco de dados
   
-  %(prog)s nlp validate                   # Valida pipeline NLP
-  %(prog)s nlp process --limit 50         # Processa 50 textos com NLP
+  %(prog)s nlp validate                   # Valida pipeline NLP aprimorado
+  %(prog)s nlp process --limit 50         # Processa 50 textos com NLP aprimorado
   %(prog)s nlp process --id 123           # Processa processo específico
   %(prog)s nlp process --ids 123,456,789  # Processa múltiplos processos específicos
   %(prog)s nlp reprocess                  # Reprocessa todos os NLPs existentes
   %(prog)s nlp reprocess --force --limit 100  # Reprocessa até 100 NLPs sem confirmação
   %(prog)s nlp investigate               # Investiga problemas com NLPs perdidos
   %(prog)s nlp fix                        # Corrige status inconsistente de NLP
-  %(prog)s nlp stats                      # Estatísticas detalhadas de NLP
-  %(prog)s nlp export -o resultados.json  # Exporta resultados NLP
+  %(prog)s nlp stats                      # Estatísticas detalhadas de NLP aprimorado
+  %(prog)s nlp export -o resultados.json  # Exporta resultados NLP aprimorado
         """
     )
     
@@ -763,24 +792,24 @@ Exemplos de uso:
     scrape_parser.add_argument('--collections', nargs='+', help='Coleções para pesquisar (acordaos, sentencas)', default=['acordaos', 'sentencas'])
     
     # Comandos NLP
-    nlp_parser = subparsers.add_parser('nlp', help='Comandos de processamento NLP')
+    nlp_parser = subparsers.add_parser('nlp', help='Comandos de processamento NLP aprimorado')
     nlp_subparsers = nlp_parser.add_subparsers(dest='nlp_command', help='Comandos NLP disponíveis')
     
     # nlp process
-    nlp_process_parser = nlp_subparsers.add_parser('process', help='Processa textos através do pipeline NLP')
+    nlp_process_parser = nlp_subparsers.add_parser('process', help='Processa textos através do pipeline NLP aprimorado')
     nlp_process_parser.add_argument('--id', type=int, help='ID do processo específico para processar')
     nlp_process_parser.add_argument('--ids', type=str, help='IDs dos processos específicos para processar (separados por vírgula)')
     nlp_process_parser.add_argument('--limit', type=int, default=10, help='Número máximo de processos para processar em lote')
     
     # nlp stats
-    nlp_stats_parser = nlp_subparsers.add_parser('stats', help='Exibe estatísticas detalhadas de NLP')
+    nlp_stats_parser = nlp_subparsers.add_parser('stats', help='Exibe estatísticas detalhadas de NLP aprimorado')
     
     # nlp export
-    nlp_export_parser = nlp_subparsers.add_parser('export', help='Exporta resultados de NLP para JSON')
+    nlp_export_parser = nlp_subparsers.add_parser('export', help='Exporta resultados de NLP aprimorado para JSON')
     nlp_export_parser.add_argument('-o', '--output', required=True, help='Arquivo de saída JSON')
     
     # nlp validate
-    nlp_validate_parser = nlp_subparsers.add_parser('validate', help='Valida o pipeline NLP')
+    nlp_validate_parser = nlp_subparsers.add_parser('validate', help='Valida o pipeline NLP aprimorado')
     
     # nlp reprocess
     nlp_reprocess_parser = nlp_subparsers.add_parser('reprocess', help='Reprocessa todos os textos que já foram processados com NLP')

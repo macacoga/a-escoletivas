@@ -397,7 +397,7 @@ class DatabaseManager(LoggerMixin):
     # Métodos integrados com pipeline NLP
     def processar_texto_nlp(self, processo_id: int, pipeline) -> bool:
         """
-        Processa um texto específico através do pipeline NLP
+        Processa um texto específico através do pipeline NLP aprimorado
         
         Args:
             processo_id: ID do processo
@@ -416,30 +416,45 @@ class DatabaseManager(LoggerMixin):
             if processo.processado_nlp:
                 return True
             
-            # Processar com pipeline
-            resultado_nlp = pipeline.process_text(
+            # Preparar referências legislativas existentes
+            existing_references = []
+            if processo.referencia_legislativa:
+                try:
+                    existing_references = json.loads(processo.referencia_legislativa)
+                except json.JSONDecodeError:
+                    existing_references = []
+            
+            # Processar com pipeline aprimorado
+            resultado_enhanced = pipeline.process_text_enhanced(
                 processo.conteudo_bruto_decisao,
-                str(processo_id)
+                str(processo_id),
+                existing_parts=processo.partes,
+                existing_references=existing_references
             )
             
-            # Criar objeto ResultadoNLP
+            # Criar objeto ResultadoNLP com dados aprimorados
             resultado_db = ResultadoNLP(
                 processo_id=processo_id,
-                texto_processado=resultado_nlp.processed_text,
-                resumo_extrativo=resultado_nlp.summary.get('summary', ''),
-                resumo_estruturado=json.dumps(resultado_nlp.summary.get('context', {}), ensure_ascii=False),
-                palavras_chave=json.dumps([e.text for e in resultado_nlp.entities], ensure_ascii=False),
-                tema_principal=self._extract_main_theme(resultado_nlp.worker_rights),
-                entidades_nomeadas=json.dumps([e.to_dict() for e in resultado_nlp.entities], ensure_ascii=False),
-                direitos_trabalhistas=json.dumps([r.to_dict() for r in resultado_nlp.worker_rights], ensure_ascii=False),
-                valores_monetarios=json.dumps(self._extract_monetary_values(resultado_nlp.entities), ensure_ascii=False),
-                base_legal=json.dumps(self._extract_legal_basis(resultado_nlp.entities), ensure_ascii=False),
-                qualidade_texto=resultado_nlp.text_quality.get('quality_score', 0.0),
-                confianca_global=resultado_nlp.confidence_score,
-                tempo_processamento=resultado_nlp.processing_time,
-                metodo_sumarizacao=resultado_nlp.summary.get('method', 'unknown'),
-                versao_pipeline='1.0.0',
-                metadados_nlp=json.dumps(resultado_nlp.to_dict(), ensure_ascii=False)
+                texto_processado=resultado_enhanced['text_quality'].get('processed_text', ''),
+                resumo_extrativo=resultado_enhanced.get('resumo_extrativo', ''),
+                resumo_estruturado=json.dumps(resultado_enhanced.get('structured_summary', {}), ensure_ascii=False),
+                palavras_chave=json.dumps(resultado_enhanced.get('palavras_chave', []), ensure_ascii=False),
+                tema_principal=resultado_enhanced.get('tema_principal', 'Não identificado'),
+                entidades_nomeadas=json.dumps(resultado_enhanced.get('entities', []), ensure_ascii=False),
+                direitos_trabalhistas=json.dumps(resultado_enhanced.get('worker_rights', []), ensure_ascii=False),
+                valores_monetarios=json.dumps(self._extract_monetary_values_enhanced(resultado_enhanced), ensure_ascii=False),
+                base_legal=json.dumps(self._extract_legal_references_enhanced(resultado_enhanced), ensure_ascii=False),
+                qualidade_texto=resultado_enhanced['text_quality'].get('quality_score', 0.0),
+                confianca_global=resultado_enhanced.get('confidence_score', 0.0),
+                tempo_processamento=resultado_enhanced.get('processing_time', 0.0),
+                metodo_sumarizacao='enhanced_structured',
+                versao_pipeline='2.0.0',
+                metadados_nlp=json.dumps({
+                    **resultado_enhanced,
+                    'resultado_principal': resultado_enhanced.get('resultado_principal', 'Resultado não identificado'),
+                    'partes_formatadas': resultado_enhanced.get('partes_formatadas', ''),
+                    'referencias_formatadas': resultado_enhanced.get('referencias_formatadas', '')
+                }, ensure_ascii=False, default=str)
             )
             
             # Salvar resultado
@@ -695,79 +710,7 @@ class DatabaseManager(LoggerMixin):
             self.log_error(e, "export_nlp_results")
             raise
     
-    def processar_texto_nlp_enhanced(self, processo_id: int, pipeline) -> bool:
-        """
-        Processa um texto específico através do pipeline NLP aprimorado
-        
-        Args:
-            processo_id: ID do processo
-            pipeline: Instância do pipeline NLP
-            
-        Returns:
-            True se processado com sucesso, False caso contrário
-        """
-        try:
-            # Buscar processo
-            processo = self.get_processo_by_id(processo_id)
-            if not processo:
-                return False
-            
-            # Verificar se já foi processado
-            if processo.processado_nlp:
-                return True
-            
-            # Preparar referências legislativas existentes
-            existing_references = []
-            if processo.referencia_legislativa:
-                try:
-                    existing_references = json.loads(processo.referencia_legislativa)
-                except json.JSONDecodeError:
-                    existing_references = []
-            
-            # Processar com pipeline aprimorado
-            resultado_enhanced = pipeline.process_text_enhanced(
-                processo.conteudo_bruto_decisao,
-                str(processo_id),
-                existing_parts=processo.partes,
-                existing_references=existing_references
-            )
-            
-            # Criar objeto ResultadoNLP com dados aprimorados
-            resultado_db = ResultadoNLP(
-                processo_id=processo_id,
-                texto_processado=resultado_enhanced['text_quality'].get('processed_text', ''),
-                resumo_extrativo=resultado_enhanced.get('resumo_extrativo', ''),
-                resumo_estruturado=json.dumps(resultado_enhanced.get('structured_summary', {}), ensure_ascii=False),
-                palavras_chave=json.dumps(resultado_enhanced.get('palavras_chave', []), ensure_ascii=False),
-                tema_principal=resultado_enhanced.get('tema_principal', 'Não identificado'),
-                entidades_nomeadas=json.dumps(resultado_enhanced.get('entities', []), ensure_ascii=False),
-                direitos_trabalhistas=json.dumps(resultado_enhanced.get('worker_rights', []), ensure_ascii=False),
-                valores_monetarios=json.dumps(self._extract_monetary_values_enhanced(resultado_enhanced), ensure_ascii=False),
-                base_legal=json.dumps(self._extract_legal_references_enhanced(resultado_enhanced), ensure_ascii=False),
-                qualidade_texto=resultado_enhanced['text_quality'].get('quality_score', 0.0),
-                confianca_global=resultado_enhanced.get('confidence_score', 0.0),
-                tempo_processamento=resultado_enhanced.get('processing_time', 0.0),
-                metodo_sumarizacao='enhanced_structured',
-                versao_pipeline='2.0.0',
-                metadados_nlp=json.dumps({
-                    **resultado_enhanced,
-                    'resultado_principal': resultado_enhanced.get('resultado_principal', 'Resultado não identificado'),
-                    'partes_formatadas': resultado_enhanced.get('partes_formatadas', ''),
-                    'referencias_formatadas': resultado_enhanced.get('referencias_formatadas', '')
-                }, ensure_ascii=False, default=str)
-            )
-            
-            # Salvar resultado
-            self.insert_resultado_nlp(resultado_db)
-            
-            # Marcar processo como processado
-            self.update_processo_processado(processo_id)
-            
-            return True
-            
-        except Exception as e:
-            self.log_error(e, "processar_texto_nlp_enhanced", processo_id=processo_id)
-            return False
+
     
     def _extract_monetary_values_enhanced(self, resultado_enhanced: Dict) -> List[Dict]:
         """Extrai valores monetários do resultado aprimorado"""

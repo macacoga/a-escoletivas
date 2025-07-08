@@ -41,17 +41,17 @@ class TextPreprocessor(LoggerMixin):
             # Datas:
             # Aprimorado para capturar diversos formatos de datas, incluindo meses por extenso e anos com 2 ou 4 dígitos.
             # Ex: 01/01/2023, 1-JAN-23, 15.12.1999, 5 de janeiro de 2023
-            # "dates": re.compile(
-            #     r"\b(?:\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}|\d{1,2}\s+de\s+(?:janeiro|fevereiro|março|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\s+de\s+\d{4})\b",
-            #     re.IGNORECASE,
-            # ),
+            "dates": re.compile(
+                r"\b(?:\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}|\d{1,2}\s+de\s+(?:janeiro|fevereiro|março|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\s+de\s+\d{4})\b",
+                re.IGNORECASE,
+            ),
             # # Valores monetários:
             # # Mais robusto para R$ e valores em reais, lidando com diferentes separadores (ponto/vírgula)
             # # e incluindo palavras como "mil", "milhões", etc.
-            # "monetary_values": re.compile(
-            #     r"R\$\s*\d{1,3}(?:\.?\d{3})*(?:,\d{2})?|\d{1,3}(?:\.?\d{3})*(?:,\d{2})?\s*reais?|\d{1,3}(?:\.?\d{3})*(?:,\d{2})?\s*(?:mil|milhões?|bilhões?)(?:\s+de\s+reais?)?",
-            #     re.IGNORECASE,
-            # ),
+            "monetary_values": re.compile(
+                r"R\$\s*\d{1,3}(?:\.?\d{3})*(?:,\d{2})?|\d{1,3}(?:\.?\d{3})*(?:,\d{2})?\s*reais?|\d{1,3}(?:\.?\d{3})*(?:,\d{2})?\s*(?:mil|milhões?|bilhões?)(?:\s+de\s+reais?)?",
+                re.IGNORECASE,
+            ),
             # Cabeçalhos, rodapés e informações de formatação/documento:
             # Ampliado para incluir mais termos comuns em cabeçalhos/rodapés e informações de página.
             # Usa re.IGNORECASE para ser insensível a maiúsculas/minúsculas.

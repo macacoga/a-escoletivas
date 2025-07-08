@@ -250,11 +250,11 @@ class NLPPipeline(LoggerMixin):
                      texts_data: List[Dict[str, str]], 
                      **kwargs) -> List[NLPResults]:
         """
-        Processa múltiplos textos em lote
+        Processa múltiplos textos em lote usando processamento aprimorado
         
         Args:
             texts_data: Lista de dicionários com 'text' e 'processo_id'
-            **kwargs: Argumentos para process_text
+            **kwargs: Argumentos para process_text_enhanced
             
         Returns:
             Lista de resultados
@@ -268,10 +268,20 @@ class NLPPipeline(LoggerMixin):
                     self.logger.info(f"Processando texto {i+1}/{total_texts}")
                 
                 try:
-                    result = self.process_text(
+                    # Preparar referências existentes se for string JSON
+                    existing_references = text_data.get('existing_references')
+                    if isinstance(existing_references, str):
+                        try:
+                            import json
+                            existing_references = json.loads(existing_references)
+                        except (json.JSONDecodeError, TypeError):
+                            existing_references = None
+                    
+                    result = self.process_text_enhanced(
                         text_data['text'],
                         text_data['processo_id'],
-                        **kwargs
+                        existing_parts=text_data.get('existing_parts'),
+                        existing_references=existing_references
                     )
                     results.append(result)
                     
@@ -293,12 +303,12 @@ class NLPPipeline(LoggerMixin):
             self.log_error(e, "batch_process", total_texts=len(texts_data))
             raise
     
-    def create_analysis_report(self, results: List[NLPResults]) -> Dict[str, Any]:
+    def create_analysis_report(self, results: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        Cria relatório de análise dos resultados
+        Cria relatório de análise dos resultados aprimorados
         
         Args:
-            results: Lista de resultados do processamento
+            results: Lista de resultados do processamento aprimorado
             
         Returns:
             Relatório de análise
@@ -309,41 +319,49 @@ class NLPPipeline(LoggerMixin):
             
             # Estatísticas gerais
             total_processes = len(results)
-            avg_processing_time = sum(r.processing_time for r in results) / total_processes
-            avg_confidence = sum(r.confidence_score for r in results) / total_processes
+            avg_processing_time = sum(r.get('processing_time', 0) for r in results) / total_processes
+            avg_confidence = sum(r.get('confidence_score', 0) for r in results) / total_processes
             
             # Estatísticas de qualidade
-            quality_scores = [r.text_quality.get('quality_score', 0) for r in results]
+            quality_scores = [r.get('text_quality', {}).get('quality_score', 0) for r in results]
             avg_quality = sum(quality_scores) / len(quality_scores)
             
             # Estatísticas de entidades
-            total_entities = sum(len(r.entities) for r in results)
+            total_entities = sum(len(r.get('entities', [])) for r in results)
             entity_types = {}
             for result in results:
-                for entity in result.entities:
-                    entity_types[entity.label] = entity_types.get(entity.label, 0) + 1
+                for entity in result.get('entities', []):
+                    label = entity.get('label', 'UNKNOWN')
+                    entity_types[label] = entity_types.get(label, 0) + 1
             
             # Estatísticas de direitos
-            total_rights = sum(len(r.worker_rights) for r in results)
+            total_rights = sum(len(r.get('worker_rights', [])) for r in results)
             rights_types = {}
             rights_outcomes = {'granted': 0, 'denied': 0, 'partially_granted': 0, 'unknown': 0}
             
             for result in results:
-                for right in result.worker_rights:
-                    rights_types[right.type] = rights_types.get(right.type, 0) + 1
-                    outcome = right.decision_outcome or 'unknown'
+                for right in result.get('worker_rights', []):
+                    right_type = right.get('type', 'unknown')
+                    rights_types[right_type] = rights_types.get(right_type, 0) + 1
+                    outcome = right.get('decision_outcome', 'unknown')
                     rights_outcomes[outcome] = rights_outcomes.get(outcome, 0) + 1
             
-            # Estatísticas de resumos
-            successful_summaries = len([r for r in results if r.summary.get('summary')])
+            # Estatísticas de resumos estruturados
+            successful_summaries = len([r for r in results if r.get('resumo_extrativo')])
             avg_compression_ratio = 0
             if successful_summaries > 0:
                 compression_ratios = [
-                    r.summary.get('metrics', {}).get('compression_ratio', 0) 
-                    for r in results if r.summary.get('metrics', {}).get('compression_ratio')
+                    r.get('structured_summary', {}).get('metrics', {}).get('compression_ratio', 0) 
+                    for r in results if r.get('structured_summary', {}).get('metrics', {}).get('compression_ratio')
                 ]
                 if compression_ratios:
                     avg_compression_ratio = sum(compression_ratios) / len(compression_ratios)
+            
+            # Estatísticas de partes extraídas
+            parts_extracted = sum(1 for r in results if r.get('parts_data', {}).get('reclamante') or r.get('parts_data', {}).get('reclamado'))
+            
+            # Estatísticas de referências legislativas
+            total_references = sum(len(r.get('legal_references', {}).get('references', [])) for r in results)
             
             # Criar relatório
             report = {
@@ -369,6 +387,12 @@ class NLPPipeline(LoggerMixin):
                     'success_rate': round(successful_summaries / total_processes, 2),
                     'avg_compression_ratio': round(avg_compression_ratio, 2)
                 },
+                'enhanced_stats': {
+                    'parts_extracted': parts_extracted,
+                    'parts_extraction_rate': round(parts_extracted / total_processes, 2),
+                    'total_legal_references': total_references,
+                    'avg_references_per_process': round(total_references / total_processes, 1)
+                },
                 'quality_distribution': {
                     'high_quality': len([s for s in quality_scores if s >= 0.8]),
                     'medium_quality': len([s for s in quality_scores if 0.5 <= s < 0.8]),
@@ -381,7 +405,9 @@ class NLPPipeline(LoggerMixin):
                 total_processes=total_processes,
                 avg_confidence=avg_confidence,
                 total_entities=total_entities,
-                total_rights=total_rights
+                total_rights=total_rights,
+                parts_extracted=parts_extracted,
+                total_references=total_references
             )
             
             return report
@@ -390,12 +416,12 @@ class NLPPipeline(LoggerMixin):
             self.log_error(e, "create_analysis_report")
             return {}
     
-    def export_results_to_json(self, results: List[NLPResults], filepath: str = "data/nlp_results.json") -> str:
+    def export_results_to_json(self, results: List[Dict[str, Any]], filepath: str = "data/nlp_results.json") -> str:
         """
-        Exporta resultados para JSON
+        Exporta resultados aprimorados para JSON
         
         Args:
-            results: Lista de resultados
+            results: Lista de resultados aprimorados
             filepath: Caminho para salvar arquivo (opcional)
             
         Returns:
@@ -406,9 +432,10 @@ class NLPPipeline(LoggerMixin):
                 'metadata': {
                     'total_processes': len(results),
                     'export_date': datetime.now().isoformat(),
-                    'pipeline_version': '1.0.0'
+                    'pipeline_version': '2.0.0',
+                    'processing_type': 'enhanced'
                 },
-                'results': [result.to_dict() for result in results]
+                'results': results
             }
             
             json_string = json.dumps(export_data, ensure_ascii=False, indent=2)
@@ -433,7 +460,7 @@ class NLPPipeline(LoggerMixin):
     
     def get_pipeline_stats(self) -> Dict[str, Any]:
         """
-        Retorna estatísticas do pipeline
+        Retorna estatísticas do pipeline aprimorado
         
         Returns:
             Estatísticas dos componentes
@@ -444,7 +471,10 @@ class NLPPipeline(LoggerMixin):
                     'text_preprocessor': type(self.text_preprocessor).__name__,
                     'entity_extractor': type(self.entity_extractor).__name__,
                     'rights_analyzer': type(self.rights_analyzer).__name__,
-                    'extractive_summarizer': type(self.extractive_summarizer).__name__
+                    'extractive_summarizer': type(self.extractive_summarizer).__name__,
+                    'parts_extractor': type(self.parts_extractor).__name__,
+                    'legal_references_extractor': type(self.legal_references_extractor).__name__,
+                    'structured_summarizer': type(self.structured_summarizer).__name__
                 },
                 'configuration': {
                     'min_text_length': self.min_text_length,
@@ -456,8 +486,14 @@ class NLPPipeline(LoggerMixin):
                     'entity_extraction': True,
                     'rights_analysis': True,
                     'extractive_summarization': True,
-                    'batch_processing': True
-                }
+                    'structured_summarization': True,
+                    'parts_extraction': True,
+                    'legal_references_extraction': True,
+                    'batch_processing': True,
+                    'enhanced_processing': True
+                },
+                'version': '2.0.0',
+                'processing_type': 'enhanced'
             }
             
             return stats
@@ -468,7 +504,7 @@ class NLPPipeline(LoggerMixin):
     
     def validate_pipeline(self) -> Dict[str, bool]:
         """
-        Valida se todos os componentes do pipeline estão funcionando
+        Valida se todos os componentes do pipeline aprimorado estão funcionando
         
         Returns:
             Status de validação de cada componente
@@ -502,7 +538,7 @@ class NLPPipeline(LoggerMixin):
             self.log_error(e, "validate_rights_analyzer")
             validation_results['rights_analyzer'] = False
         
-        # Testar sumarizador
+        # Testar sumarizador extrativo
         try:
             test_text = "Esta é uma decisão judicial teste. O trabalhador pleiteou direitos trabalhistas. O juiz decidiu pela procedência do pedido."
             self.extractive_summarizer.create_summary(test_text)
@@ -511,12 +547,41 @@ class NLPPipeline(LoggerMixin):
             self.log_error(e, "validate_extractive_summarizer")
             validation_results['extractive_summarizer'] = False
         
+        # Testar extrator de partes
+        try:
+            test_text = "RECLAMANTE: João Silva, CPF 123.456.789-00. RECLAMADO: Empresa XYZ Ltda."
+            self.parts_extractor.extract_parts(test_text)
+            validation_results['parts_extractor'] = True
+        except Exception as e:
+            self.log_error(e, "validate_parts_extractor")
+            validation_results['parts_extractor'] = False
+        
+        # Testar extrator de referências legislativas
+        try:
+            test_text = "Fundamentado no art. 458 da CLT e art. 7º da Constituição Federal."
+            self.legal_references_extractor.extract_references(test_text)
+            validation_results['legal_references_extractor'] = True
+        except Exception as e:
+            self.log_error(e, "validate_legal_references_extractor")
+            validation_results['legal_references_extractor'] = False
+        
+        # Testar sumarizador estruturado
+        try:
+            test_text = "O trabalhador pleiteou horas extras. O juiz julgou procedente o pedido."
+            parts_data = {'reclamante': 'João Silva', 'reclamado': 'Empresa XYZ'}
+            legal_refs = {'references': []}
+            self.structured_summarizer.create_structured_summary(test_text, parts_data, legal_refs)
+            validation_results['structured_summarizer'] = True
+        except Exception as e:
+            self.log_error(e, "validate_structured_summarizer")
+            validation_results['structured_summarizer'] = False
+        
         # Status geral
         all_valid = all(validation_results.values())
         validation_results['pipeline_valid'] = all_valid
         
         if all_valid:
-            self.logger.info("Pipeline validado com sucesso - todos os componentes funcionando")
+            self.logger.info("Pipeline aprimorado validado com sucesso - todos os componentes funcionando")
         else:
             failed_components = [comp for comp, status in validation_results.items() if not status]
             self.logger.error(f"Falha na validação dos componentes: {failed_components}")

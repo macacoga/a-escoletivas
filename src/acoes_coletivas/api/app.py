@@ -3,7 +3,7 @@ Aplicação Flask principal para API RESTful
 """
 
 import os
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_restx import Api, Namespace
 import logging
@@ -75,7 +75,7 @@ def create_app(config_name: str = 'production'):
     @app.before_request
     def log_request_info():
         logger = get_logger("API")
-        logger.info(f"Request: {app.current_request.method if hasattr(app, 'current_request') else 'Unknown'} {app.current_request.url if hasattr(app, 'current_request') else 'Unknown'}")
+        logger.info(f"Request: {request.method} {request.url}")
     
     # Handler de erro global
     @app.errorhandler(404)
